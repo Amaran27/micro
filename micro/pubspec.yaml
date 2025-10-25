@@ -1,0 +1,93 @@
+name: micro
+description: A privacy-first, autonomous agentic mobile assistant built with Flutter.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  
+  # State Management
+  riverpod: ^2.6.1
+  hooks_riverpod: ^2.6.1
+  
+  # Navigation
+  go_router: ^16.2.5
+  
+  # Database & Storage
+  sqflite: ^2.3.0
+  path_provider: ^2.1.1
+  flutter_secure_storage: ^9.2.2
+  
+  # Networking
+  dio: ^5.4.0+1
+  web_socket_channel: ^3.0.3
+  
+  # JSON Serialization
+  json_annotation: ^4.9.0
+  
+  # UI & Material Design
+  flutter_animate: ^4.3.0
+  fl_chart: ^1.1.1
+  flutter_markdown: ^0.7.4
+  
+  # Permissions & Device Integration
+  permission_handler: ^12.0.1
+  local_auth: ^3.0.0
+  sensors_plus: ^7.0.0
+  geolocator: ^14.0.2
+  workmanager: ^0.9.0+3
+  
+  # Utilities
+  intl: ^0.20.2
+  logger: ^2.0.2+1
+  path: ^1.8.3
+  cached_network_image: ^3.3.0
+  shared_preferences: ^2.2.2
+  
+  # Security
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+  
+  # Performance
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
+  # Markdown
+  markdown: ^7.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_gen_runner: ^5.3.0
+  json_serializable: ^6.7.1
+  build_runner: ^2.7.1
+  mocktail: ^1.0.1
+  test: ^1.26.2
+  equatable: ^2.0.5
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/fonts/
+
+flutter_gen:
+  output: lib/generated/
+  line_length: 80
+  integrations:
+    flutter_svg: true
+    lottie: true
+    flare_flutter: true
+    rive: true
