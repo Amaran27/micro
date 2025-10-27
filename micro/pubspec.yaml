@@ -15,11 +15,12 @@ dependencies:
     sdk: flutter
   
   # State Management
-  riverpod: ^2.6.1
-  hooks_riverpod: ^2.6.1
+  riverpod: ^3.0.3
+  flutter_riverpod: ^3.0.3
+  hooks_riverpod: ^3.0.3
   
   # Navigation
-  go_router: ^16.2.5
+  go_router: ^16.3.0
   
   # Database & Storage
   sqflite: ^2.3.0
@@ -27,8 +28,9 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   
   # Networking
-  dio: ^5.4.0+1
+  dio: ^5.7.0
   web_socket_channel: ^3.0.3
+  url_launcher: ^6.3.0
   
   # JSON Serialization
   json_annotation: ^4.9.0
@@ -36,7 +38,8 @@ dependencies:
   # UI & Material Design
   flutter_animate: ^4.3.0
   fl_chart: ^1.1.1
-  flutter_markdown: ^0.7.4
+  # Using markdown_widget (actively maintained alternative to discontinued flutter_markdown)
+  markdown_widget: ^2.3.2+8
   
   # Permissions & Device Integration
   permission_handler: ^12.0.1
@@ -55,13 +58,42 @@ dependencies:
   # Security
   encrypt: ^5.0.3
   pointycastle: ^3.9.1
+  crypto: ^3.0.3
   
   # Performance
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   
-  # Markdown
-  markdown: ^7.2.2
+  # AI & LangChain Integration
+  langchain: ^0.8.0+1
+  langchain_openai: ^0.8.0+1
+  langchain_google: ^0.7.0+1
+  langchain_community: ^0.4.0+1
+  langchain_core: ^0.4.0+1
+  
+  # Additional LLM Providers
+  anthropic_sdk_dart: ^0.3.0+1
+  ollama_dart: ^0.3.0+1
+  huggingface_dart: ^0.0.2
+  openai_dart: ^0.6.0+1
+  
+  # New LLM Provider SDKs
+  # Note: We'll implement these providers using HTTP directly for now
+  # azure_openai_dart: ^0.1.0+1
+  # cohere_dart: ^0.1.0+1
+  # mistralai_dart: ^0.1.0+1
+  # stability_ai_dart: ^0.1.0+1
+  # together_ai_dart: ^0.1.0+1
+  
+  # Notifications & Scheduling
+  flutter_local_notifications: ^19.5.0
+  cron: ^0.6.2
+  queue: ^3.1.0+1
+  
+  # Additional dependencies
+  equatable: ^2.0.5
+  mockito: ^5.4.4
+  flutter_gen_ai_chat_ui: ^2.4.2
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +107,7 @@ dev_dependencies:
   mocktail: ^1.0.1
   test: ^1.26.2
   equatable: ^2.0.5
+  crypto: ^3.0.3
 
 flutter:
   uses-material-design: true
@@ -89,5 +122,4 @@ flutter_gen:
   integrations:
     flutter_svg: true
     lottie: true
-    flare_flutter: true
     rive: true

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:collection/collection.dart';
 import '../interfaces/i_discovery_source.dart';
 import '../models/discovery_models.dart';
 import '../../core/models/tool.dart';
@@ -548,7 +547,7 @@ class LocalDeviceDiscoverySource extends BaseDiscoverySource {
     try {
       // Try to list files in a common directory
       final testDir = Directory.systemTemp;
-      await testDir.list();
+      testDir.list();
       return true;
     } catch (e) {
       return false;

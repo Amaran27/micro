@@ -459,7 +459,7 @@ class ResourceLimits extends Equatable {
 
   @override
   String toString() =>
-      'ResourceLimits(memory: ${maxMemoryMB}MB, cpu: ${maxCpuPercent}%, network: ${maxNetworkMB}MB)';
+      'ResourceLimits(memory: ${maxMemoryMB}MB, cpu: $maxCpuPercent%, network: ${maxNetworkMB}MB)';
 }
 
 /// Compliance requirement

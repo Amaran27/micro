@@ -1,7 +1,5 @@
 import 'package:equatable/equatable.dart';
 import 'package:json_annotation/json_annotation.dart';
-import 'tool.dart';
-import 'tool_result.dart';
 
 part 'tool_call.g.dart';
 

@@ -1,0 +1,425 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:convert';
+
+import '../../infrastructure/mcp/core/models/tool.dart';
+import '../../infrastructure/mcp/core/models/tool_call.dart';
+import '../../infrastructure/mcp/core/models/tool_result.dart';
+import '../providers/tools_provider.dart' as tools;
+
+// Alias to resolve naming conflicts
+import '../../infrastructure/mcp/core/models/tool_result.dart' as result;
+
+/// Tool execution widget for dynamic form generation and execution
+class ToolExecutionWidget extends ConsumerWidget {
+  final String toolId;
+  final Tool tool;
+  final Map<String, dynamic> initialParameters;
+
+  const ToolExecutionWidget({
+    super.key,
+    required this.toolId,
+    required this.tool,
+    this.initialParameters = const {},
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final TextEditingController _parametersController = TextEditingController();
+    final Map<String, dynamic> _parameters = {};
+    final Map<String, bool> _parameterErrors = {};
+    bool _isExecuting = false;
+    String? _executionError;
+
+    // Initialize with tool's parameters
+    _parameters = Map<String, dynamic>.from(widget.tool.inputSchema);
+    _parametersController.text = jsonEncode(_parameters);
+    
+    // Set initial parameters if provided
+    if (widget.initialParameters.isNotEmpty) {
+      _parameters.addAll(widget.initialParameters);
+      _parametersController.text = jsonEncode(_parameters);
+    }
+
+  @override
+  void dispose() {
+    _parametersController.dispose();
+    super.dispose();
+  }
+    
+    return Consumer(
+      builder: (context, ref) {
+        final toolsState = ref.watch(tools.toolsStateProvider);
+        final executionStatus = ref.watch(tools.toolExecutionStatusProvider)[widget.toolId] ?? result.ToolExecutionStatus.idle;
+        final executionResult = ref.watch(tools.toolExecutionResultsProvider)[widget.toolId];
+        
+        return Card(
+      margin: const EdgeInsets.all(16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Tool header
+            Row(
+              children: [
+                Icon(
+                  widget.tool.isMobileOptimized ? Icons.phone_android : Icons.computer,
+                  color: widget.tool.isMobileOptimized 
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.outline,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.tool.name,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'v${widget.tool.version}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+            
+            // Execution status
+            if (_isExecuting || executionStatus != ToolExecutionStatus.idle) ...[
+              Container(
+                margin: const EdgeInsets.only(top: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(executionStatus),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    _buildStatusIcon(executionStatus),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getStatusText(executionStatus),
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: _getStatusTextColor(executionStatus),
+                            ),
+                          ),
+                          if (_executionError != null)
+                            Text(
+                              _executionError!,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            
+            // Tool parameters form
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Parameters',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // Dynamic form fields based on tool schema
+                  Expanded(
+                    child: _buildParameterForm(),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Execute button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isExecuting ? null : _executeTool,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_isExecuting)
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: Colors.white,
+                              ),
+                            )
+                          else
+                            const Icon(Icons.play_arrow),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Execute Tool',
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParameterForm() {
+    final schema = widget.tool.inputSchema;
+    final properties = schema['properties'] as Map<String, dynamic>? ?? {};
+    
+    return Column(
+      children: properties.entries.map((entry) {
+        final key = entry.key;
+        final propSchema = entry.value as Map<String, dynamic>;
+        final type = propSchema['type'] as String? ?? 'string';
+        final title = propSchema['title'] as String? ?? key;
+        final description = propSchema['description'] as String? ?? '';
+        final isRequired = propSchema['required'] as bool? ?? false;
+        final defaultValue = propSchema['default'] as dynamic?;
+        final currentValue = _parameters[key] ?? defaultValue;
+        final hasError = _parameterErrors.containsKey(key);
+        
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _getControllerForKey(key),
+                decoration: InputDecoration(
+                  labelText: title,
+                  hintText: description,
+                  border: hasError 
+                      ? Border.all(color: Theme.of(context).colorScheme.error)
+                      : null,
+                  errorText: hasError ? _parameterErrors[key] : null,
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    if (value.isNotEmpty) {
+                      _parameters[key] = _convertParameterValue(value, type);
+                    } else {
+                      _parameters.remove(key);
+                    }
+                    
+                    // Clear error for this parameter
+                    if (_parameterErrors.containsKey(key)) {
+                      setState(() {
+                        _parameterErrors.remove(key);
+                      });
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  TextEditingController _getControllerForKey(String key) {
+    // Create or get controller for the parameter key
+    if (!_parametersController.text.contains('"$key"')) {
+      return TextEditingController(text: _parameters[key]);
+    }
+    
+    // Find the parameter in the JSON and get its position
+    final parameters = jsonDecode(_parametersController.text) as Map<String, dynamic>;
+    final paramKeys = parameters.keys.toList();
+    final keyIndex = paramKeys.indexOf(key);
+    
+    // Create a new controller with the current value
+    final currentValue = parameters[key];
+    return TextEditingController(
+      text: currentValue?.toString() ?? '',
+      selection: TextSelection.collapsed(
+        baseOffset: keyIndex > 0 
+            ? _getParameterPosition(keyIndex - 1, paramKeys.length, currentValue?.toString())
+            : 0,
+        extent: TextSelection.collapsed(
+          baseOffset: keyIndex > 0 
+              ? _getParameterPosition(keyIndex + 1, paramKeys.length, '')
+              : 0,
+        ),
+      ),
+    );
+  }
+
+  int _getParameterPosition(int keyIndex, int totalKeys, String? currentValue) {
+    // Calculate the position in the text field
+    int position = 0;
+    for (int i = 0; i < keyIndex; i++) {
+      final paramKey = totalKeys > i ? totalKeys - 1 : i;
+      final paramValue = _parameters[paramKey]?.toString() ?? '';
+      position += paramValue.length + 3; // +3 for quotes and comma
+    }
+    
+    if (currentValue != null) {
+      position += currentValue!.length;
+    }
+    
+    return position;
+  }
+
+  dynamic _convertParameterValue(String value, String type) {
+    // Convert string value to appropriate type based on schema
+    switch (type.toLowerCase()) {
+      case 'string':
+        return value;
+      case 'integer':
+        return int.tryParse(value) ?? 0;
+      case 'number':
+        return double.tryParse(value) ?? 0.0;
+      case 'boolean':
+        return value.toLowerCase() == 'true';
+      case 'array':
+        try {
+          // Remove surrounding quotes if present
+          final cleanValue = value.trim();
+          if (cleanValue.startsWith('[') && cleanValue.endsWith(']')) {
+            return jsonDecode(cleanValue);
+          }
+          return cleanValue.split(',').map((s) => s.trim()).toList();
+        } catch (e) {
+          return value;
+        }
+      default:
+        return value;
+    }
+  }
+
+  Future<void> _executeTool() async {
+    if (_parameterErrors.isNotEmpty) {
+      // Don't execute if there are validation errors
+      return;
+    }
+    
+    setState(() {
+      _isExecuting = true;
+      _executionError = null;
+    });
+    
+    try {
+      final toolsProvider = ref.read(toolsProviderProvider);
+      
+      // Execute tool with current parameters
+      await toolsProvider.executeTool(
+        toolId: widget.toolId,
+        parameters: _parameters,
+      );
+      
+      setState(() {
+        _isExecuting = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isExecuting = false;
+        _executionError = 'Execution failed: ${e.toString()}';
+      });
+    }
+  }
+
+  Color _getStatusColor(ToolExecutionStatus status) {
+    switch (status) {
+      case ToolExecutionStatus.idle:
+        return Theme.of(context).colorScheme.outline;
+      case ToolExecutionStatus.preparing:
+        return Colors.orange;
+      case ToolExecutionStatus.executing:
+        return Theme.of(context).colorScheme.primary;
+      case ToolExecutionStatus.completed:
+        return Colors.green;
+      case ToolExecutionStatus.failed:
+        return Theme.of(context).colorScheme.error;
+      case ToolExecutionStatus.cancelled:
+        return Colors.grey;
+      default:
+        return Theme.of(context).colorScheme.outline;
+    }
+  }
+
+  Color _getStatusTextColor(ToolExecutionStatus status) {
+    switch (status) {
+      case ToolExecutionStatus.idle:
+      return Theme.of(context).colorScheme.onSurface;
+      case ToolExecutionStatus.preparing:
+        return Colors.white;
+      case ToolExecutionStatus.executing:
+        return Colors.white;
+      case ToolExecutionStatus.completed:
+        return Colors.white;
+      case ToolExecutionStatus.failed:
+        return Theme.of(context).colorScheme.onError;
+      case ToolExecutionStatus.cancelled:
+        return Theme.of(context).colorScheme.onSurface;
+      default:
+        return Theme.of(context).colorScheme.onSurface;
+    }
+  }
+
+  IconData _getStatusIcon(ToolExecutionStatus status) {
+    switch (status) {
+      case ToolExecutionStatus.idle:
+        return Icons.hourglass_empty;
+      case ToolExecutionStatus.preparing:
+        return Icons.hourglass_top;
+      case ToolExecutionStatus.executing:
+        return Icons.play_arrow;
+      case ToolExecutionStatus.completed:
+        return Icons.check_circle;
+      case ToolExecutionStatus.failed:
+        return Icons.error;
+      case ToolExecutionStatus.cancelled:
+        return Icons.cancel;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
+  String _getStatusText(ToolExecutionStatus status) {
+    switch (status) {
+      case ToolExecutionStatus.idle:
+        return 'Ready to execute';
+      case ToolExecutionStatus.preparing:
+        return 'Preparing execution';
+      case ToolExecutionStatus.executing:
+        return 'Executing tool';
+      case ToolExecutionStatus.completed:
+        return 'Execution completed';
+      case ToolExecutionStatus.failed:
+        return 'Execution failed';
+      case ToolExecutionStatus.cancelled:
+        return 'Execution cancelled';
+      default:
+        return 'Unknown status';
+    }
+  }
+}

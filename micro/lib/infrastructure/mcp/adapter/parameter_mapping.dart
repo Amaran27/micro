@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import '../core/models/tool.dart';
 import '../core/models/domain_context.dart';
 import '../core/exceptions/mcp_exceptions.dart';
 import 'models/adapter_models.dart';

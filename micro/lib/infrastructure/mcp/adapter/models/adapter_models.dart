@@ -441,7 +441,7 @@ class ResourceLimits extends Equatable {
 
   @override
   String toString() =>
-      'ResourceLimits(memory: ${maxMemoryMB}MB, cpu: ${maxCpuPercent}%, time: ${maxExecutionTime.inSeconds}s)';
+      'ResourceLimits(memory: ${maxMemoryMB}MB, cpu: $maxCpuPercent%, time: ${maxExecutionTime.inSeconds}s)';
 }
 
 /// Security policy for execution environment
@@ -629,7 +629,7 @@ class AdaptationPerformanceImpact extends Equatable {
 
   @override
   String toString() =>
-      'AdaptationPerformanceImpact(time: ${executionTimeOverheadPercent}%, memory: ${memoryOverheadPercent}%)';
+      'AdaptationPerformanceImpact(time: $executionTimeOverheadPercent%, memory: $memoryOverheadPercent%)';
 }
 
 /// Performance metrics for the adapter

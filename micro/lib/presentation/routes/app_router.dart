@@ -4,12 +4,13 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants.dart';
 import '../../config/app_config.dart';
 import '../pages/home_page.dart';
-import '../pages/chat_page.dart';
+import '../pages/enhanced_ai_chat_page.dart';
 import '../pages/dashboard_page.dart';
-import '../pages/tools_page.dart';
+import '../widgets/simple_tools_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/workflows_page.dart';
 import '../pages/onboarding_page.dart';
+import '../pages/unified_provider_settings.dart';
 import '../providers/app_providers.dart';
 
 class AppRouter {
@@ -41,7 +42,7 @@ class AppRouter {
           GoRoute(
             path: RouteConstants.chat,
             name: 'chat',
-            builder: (context, state) => const ChatPage(),
+            builder: (context, state) => const EnhancedAIChatPage(),
           ),
 
           // Dashboard
@@ -55,7 +56,7 @@ class AppRouter {
           GoRoute(
             path: RouteConstants.tools,
             name: 'tools',
-            builder: (context, state) => const ToolsPage(),
+            builder: (context, state) => const SimpleToolsPage(),
           ),
 
           // Workflows
@@ -70,6 +71,14 @@ class AppRouter {
             path: RouteConstants.settings,
             name: 'settings',
             builder: (context, state) => const SettingsPage(),
+            routes: [
+              // AI Providers
+              GoRoute(
+                path: 'providers',
+                name: 'providers',
+                builder: (context, state) => const UnifiedProviderSettings(),
+              ),
+            ],
           ),
 
           // Workflow Detail
@@ -108,7 +117,8 @@ class AppRouter {
     // Redirects
     redirect: (context, state) {
       final container = ProviderScope.containerOf(context);
-      final isOnboardingComplete = container.read(onboardingCompleteProvider);
+      final isOnboardingComplete =
+          container.read(onboardingCompleteSyncProvider);
       final currentPath = state.uri.toString();
 
       // If onboarding is not complete and user is not on onboarding page, redirect to onboarding
@@ -181,7 +191,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   @override
   void initState() {
     super.initState();
-    _updateCurrentIndex();
   }
 
   @override
@@ -192,7 +201,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   void _updateCurrentIndex() {
     final location =
-        GoRouter.of(context).routeInformationProvider.value.location;
+        GoRouter.of(context).routeInformationProvider.value.uri.toString();
     for (int i = 0; i < _navigationItems.length; i++) {
       if (location.startsWith(_navigationItems[i].route)) {
         setState(() {
@@ -205,7 +214,26 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Get the current route to determine the index
+    final location =
+        GoRouter.of(context).routeInformationProvider.value.uri.toString();
+    for (int i = 0; i < _navigationItems.length; i++) {
+      if (location.startsWith(_navigationItems[i].route)) {
+        _currentIndex = i;
+        break;
+      }
+    }
+
+    // Don't show AppBar for chat page as it has its own header
+    final showAppBar = !location.startsWith(RouteConstants.chat);
+
     return Scaffold(
+      appBar: showAppBar
+          ? AppBar(
+              title: Text(_navigationItems[_currentIndex].label),
+              elevation: 0,
+            )
+          : null,
       body: widget.child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -239,7 +267,7 @@ class NavigationItem {
   });
 }
 
-// Placeholder pages for routes that don't exist yet
+// Placeholder pages for routes that don\'t exist yet
 class WorkflowDetailPage extends StatelessWidget {
   final String workflowId;
 
@@ -341,6 +369,11 @@ class ErrorPage extends StatelessWidget {
               ElevatedButton(
                 onPressed: () => context.go(RouteConstants.home),
                 child: const Text('Go Home'),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Go Back'),
               ),
             ],
           ),

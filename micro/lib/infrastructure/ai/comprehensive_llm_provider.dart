@@ -1,0 +1,1249 @@
+import 'dart:async';
+
+import 'package:langchain/langchain.dart';
+import 'package:langchain_openai/langchain_openai.dart';
+import 'package:langchain_google/langchain_google.dart';
+import 'package:logger/logger.dart';
+
+import 'additional_providers.dart';
+
+/// MDO Provider Interface
+abstract class LLMMDProvider {
+  String get providerId;
+  String get providerName;
+
+  Future<void> initialize();
+
+  List<Map<String, dynamic>> getAvailableModels();
+
+  Map<String, dynamic>? getModel(String modelId);
+
+  Map<String, dynamic>? getBestModel();
+
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options});
+
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options});
+}
+
+/// OpenAI MDO Provider
+class OpenAIMDOProvider implements LLMMDProvider {
+  final String apiKey;
+  bool _isInitialized = false;
+  ChatOpenAI? _chat;
+
+  OpenAIMDOProvider({required this.apiKey});
+
+  @override
+  String get providerId => 'openai';
+
+  @override
+  String get providerName => 'OpenAI';
+
+  @override
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      _chat = ChatOpenAI(
+        apiKey: apiKey,
+        defaultOptions: const ChatOpenAIOptions(
+          temperature: 0.7,
+          maxTokens: 4096,
+        ),
+      );
+      _isInitialized = true;
+    } catch (e) {
+      throw Exception('OpenAI initialization failed: $e');
+    }
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    return [
+      {'id': 'gpt-4', 'name': 'GPT-4', 'context': 8192},
+      {'id': 'gpt-4-turbo', 'name': 'GPT-4 Turbo', 'context': 128000},
+      {'id': 'gpt-3.5-turbo', 'name': 'GPT-3.5 Turbo', 'context': 4096},
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    final models = getAvailableModels();
+    for (final model in models) {
+      if (model['id'] == modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('gpt-4-turbo') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized) return 'OpenAI not initialized';
+
+    final result = await _chat!.invoke(PromptValue.string(prompt));
+    return result.outputAsString;
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized) {
+      yield 'OpenAI not initialized';
+      return;
+    }
+
+    final stream = _chat!.stream(PromptValue.string(prompt));
+    await for (final chunk in stream) {
+      yield chunk.outputAsString;
+    }
+  }
+}
+
+/// Google AI MDO Provider
+class GoogleAIMDOProvider implements LLMMDProvider {
+  final String apiKey;
+  bool _isInitialized = false;
+  ChatGoogleGenerativeAI? _chat;
+
+  GoogleAIMDOProvider({required this.apiKey});
+
+  @override
+  String get providerId => 'google';
+
+  @override
+  String get providerName => 'Google AI';
+
+  @override
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      _chat = ChatGoogleGenerativeAI(
+        apiKey: apiKey,
+        defaultOptions: const ChatGoogleGenerativeAIOptions(
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+        ),
+      );
+      _isInitialized = true;
+    } catch (e) {
+      throw Exception('Google AI initialization failed: $e');
+    }
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    // This is now handled dynamically by ModelSelectionService
+    // Keeping a fallback list for when API is not available
+    return [
+      {
+        'id': 'gemini-2.0-flash-exp',
+        'name': 'Gemini 2.0 Flash Exp',
+        'context': 1048576
+      },
+      {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro', 'context': 2097152},
+      {
+        'id': 'gemini-1.5-flash',
+        'name': 'Gemini 1.5 Flash',
+        'context': 1048576
+      },
+      {'id': 'gemini-1.0-pro', 'name': 'Gemini 1.0 Pro', 'context': 32768},
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    final models = getAvailableModels();
+    for (final model in models) {
+      if (model['id'] == modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('gemini-pro') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized) return 'Google AI not initialized';
+
+    final result = await _chat!.invoke(PromptValue.string(prompt));
+    return result.outputAsString;
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized) {
+      yield 'Google AI not initialized';
+      return;
+    }
+
+    final stream = _chat!.stream(PromptValue.string(prompt));
+    await for (final chunk in stream) {
+      yield chunk.outputAsString;
+    }
+  }
+}
+
+/// Anthropic Claude MDO Provider
+class AnthropicClaudeMDOProvider implements LLMMDProvider {
+  final String apiKey;
+  bool _isInitialized = false;
+
+  AnthropicClaudeMDOProvider({required this.apiKey});
+
+  @override
+  String get providerId => 'claude';
+
+  @override
+  String get providerName => 'Anthropic Claude';
+
+  @override
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    // Simulate Claude initialization for demo
+    await Future.delayed(const Duration(milliseconds: 300));
+    _isInitialized = true;
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    return [
+      {'id': 'claude-3-opus', 'name': 'Claude 3 Opus', 'context': 200000},
+      {'id': 'claude-3-sonnet', 'name': 'Claude 3 Sonnet', 'context': 200000},
+      {'id': 'claude-3-haiku', 'name': 'Claude 3 Haiku', 'context': 200000},
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    final models = getAvailableModels();
+    for (final model in models) {
+      if (model['id'] == modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('claude-3-opus') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized) return 'Claude not initialized';
+
+    // Simulate Claude-style response for demo
+    await Future.delayed(const Duration(seconds: 1));
+    return '🤖 Claude Response: I understand you said: "$prompt"\n\nThis is a simulated response from the Anthropic Claude MDO provider for demonstration purposes.';
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized) {
+      yield 'Claude not initialized';
+      return;
+    }
+
+    // Simulate Claude-style streaming
+    final words = prompt.split(' ');
+    for (int i = 0; i < words.length; i++) {
+      yield '🤖 Claude: ${words.sublist(0, i + 1).join(' ')}';
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+
+    yield '🤖 Claude: That completes my response to your message.';
+  }
+}
+
+/// Ollama MDO Provider
+class OllamaMDOProvider implements LLMMDProvider {
+  final String? baseUrl;
+  bool _isInitialized = false;
+
+  OllamaMDOProvider({required this.baseUrl});
+
+  @override
+  String get providerId => 'ollama';
+
+  @override
+  String get providerName => 'Ollama';
+
+  @override
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    // Simulate Ollama initialization for demo
+    await Future.delayed(const Duration(milliseconds: 300));
+    _isInitialized = true;
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    return [
+      {'id': 'llama2', 'name': 'Llama 2', 'context': 4096},
+      {'id': 'mistral', 'name': 'Mistral', 'context': 8192},
+      {'id': 'codellama', 'name': 'Code Llama', 'context': 16384},
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    final models = getAvailableModels();
+    for (final model in models) {
+      if (model['id'] == modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('llama2') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized) return 'Ollama not initialized';
+
+    // Simulate local LLM response
+    await Future.delayed(const Duration(seconds: 2));
+    return '🦙 Ollama Response: Processing: "$prompt"...';
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized) {
+      yield 'Ollama not initialized';
+      return;
+    }
+
+    // Simulate local LLM streaming
+    final tokens = prompt.split(' ');
+    for (int i = 0; i < tokens.length; i++) {
+      yield '🦙 Ollama: ${tokens.sublist(0, i + 1).join(' ')}';
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+  }
+}
+
+/// Hugging Face MDO Provider
+class HuggingFaceMDOProvider implements LLMMDProvider {
+  final String? apiKey;
+  bool _isInitialized = false;
+
+  HuggingFaceMDOProvider({required this.apiKey});
+
+  @override
+  String get providerId => 'huggingface';
+
+  @override
+  String get providerName => 'Hugging Face';
+
+  @override
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    // Simulate Hugging Face initialization for demo
+    await Future.delayed(const Duration(milliseconds: 300));
+    _isInitialized = true;
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    return [
+      {'id': 'llama-2-7b', 'name': 'Llama 2 7B', 'context': 4096},
+      {'id': 'falcon-7b', 'name': 'Falcon 7B', 'context': 2048},
+      {'id': 'mistral-7b', 'name': 'Mistral 7B', 'context': 8192},
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    final models = getAvailableModels();
+    for (final model in models) {
+      if (model['id'] == modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('falcon-7b') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized) return 'Hugging Face not initialized';
+
+    // Simulate HF model response
+    await Future.delayed(const Duration(seconds: 1));
+    return '🤗 Hugging Face Response: Analyzing: "$prompt"...';
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized) {
+      yield 'Hugging Face not initialized';
+      return;
+    }
+
+    // Simulate HF streaming response
+    yield '🤗 Hugging Face: Starting analysis of: "$prompt"';
+    await Future.delayed(const Duration(seconds: 1));
+    yield '🤗 Hugging Face: Analysis complete: Insights extracted';
+  }
+}
+
+/// Together AI MDO Provider
+class TogetherAIMDOProvider implements LLMMDProvider {
+  final String apiKey;
+  bool _isInitialized = false;
+
+  TogetherAIMDOProvider({required this.apiKey});
+
+  @override
+  String get providerId => 'together';
+
+  @override
+  String get providerName => 'Together AI';
+
+  @override
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    // Simulate Together AI initialization for demo
+    await Future.delayed(const Duration(milliseconds: 300));
+    _isInitialized = true;
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    return [
+      {'id': 'mixtral-8x7b', 'name': 'Mixtral 8x7B', 'context': 32768},
+      {'id': 'llama-2-70b', 'name': 'Llama 2 70B', 'context': 4096},
+      {
+        'id': 'togethercomputer-llama-2-7b',
+        'name': 'Together Llama 2 7B',
+        'context': 4096
+      },
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    final models = getAvailableModels();
+    for (final model in models) {
+      if (model['id'] == modelId) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('mixtral-8x7b') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized) return 'Together AI not initialized';
+
+    // Simulate multi-model ensemble response
+    await Future.delayed(const Duration(milliseconds: 800));
+    return '🌐 Together AI Response: Processed: "$prompt" using ensemble of models for optimal quality.';
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized) {
+      yield 'Together AI not initialized';
+      return;
+    }
+
+    // Simulate multi-model streaming
+    yield '🌐 Together AI: Starting multi-model processing';
+    await Future.delayed(const Duration(milliseconds: 300));
+    yield '🌐 Together AI: Analyzing with primary model';
+    await Future.delayed(const Duration(milliseconds: 300));
+    yield '🌐 Together AI: Refining with specialized model';
+    await Future.delayed(const Duration(milliseconds: 300));
+    yield '🌐 Together AI: Final synthesized response';
+  }
+}
+
+/// Custom Local LLM MDO Providers
+class CustomClaudeClient implements LLMMDProvider {
+  @override
+  String get providerId => 'claude-local';
+
+  @override
+  String get providerName => 'Custom Claude (Local)';
+
+  @override
+  Future<void> initialize() async {
+    // No initialization needed for local provider
+  }
+
+  @override
+  List<Map<String, dynamic>> getAvailableModels() {
+    return [
+      {
+        'id': 'claude-3.5-sonnet-local',
+        'name': 'Claude 3.5 Sonnet (Local)',
+        'description': 'Local Claude model with 200K context',
+        'strength': 9,
+      }
+    ];
+  }
+
+  @override
+  Map<String, dynamic>? getModel(String modelId) {
+    if (modelId == 'claude-3.5-sonnet-local') {
+      return {
+        'id': modelId,
+        'name': 'Claude 3.5 Sonnet (Local)',
+        'description': 'Local Claude model with 200K context',
+        'strength': 9,
+      };
+    }
+    return null;
+  }
+
+  @override
+  Map<String, dynamic> getBestModel() {
+    return getModel('claude-3.5-sonnet-local') ?? {};
+  }
+
+  @override
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    return '🤖 Local Claude: This is a simulated local Claude response for "$prompt". In production, this would use your locally hosted Claude model.';
+  }
+
+  @override
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    yield '🤖 Local Claude: Simulating streaming response for "$prompt"';
+    await Future.delayed(const Duration(milliseconds: 100));
+    yield '🤖 Local Claude: This demonstrates local model capability.';
+  }
+}
+
+/// Comprehensive AI provider manager
+class ComprehensiveLLMProvider {
+  final Logger _logger = Logger(
+    printer: PrettyPrinter(
+      methodCount: 2,
+      errorMethodCount: 8,
+      lineLength: 120,
+      colors: true,
+      printEmojis: true,
+      printTime: true,
+    ),
+  );
+
+  // Provider instances
+  late final ChatOpenAI? _openAI;
+  late final ChatGoogleGenerativeAI? _googleAI;
+
+  // AI MDO providers
+  late final LLMMDProvider _claudeMDO;
+  late final LLMMDProvider _ollamaMDO;
+  late final LLMMDProvider _huggingFaceMDO;
+  late final LLMMDProvider _togetherMDO;
+  late final LLMMDProvider _azureOpenAIMDO;
+  late final LLMMDProvider _cohereMDO;
+  late final LLMMDProvider _mistralAIMDO;
+  late final LLMMDProvider _stabilityAIMDO;
+
+  // Current selections
+  String _currentProvider = 'openai';
+  dynamic
+      _currentModel; // Using dynamic to accommodate different provider types
+  bool _isInitialized = false;
+
+  ComprehensiveLLMProvider();
+
+  /// Initialize all available providers
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      _logger.d('🚀 Initializing Comprehensive AI Provider Manager');
+
+      // Initialize all MDO providers
+      final claudeKey = _getAPIKey('claude') ?? 'demo-key';
+      final ollamaUrl = _getAPIKey('ollama') ?? 'http://localhost:11434';
+      final hfKey = _getAPIKey('huggingface') ?? 'demo-key';
+      final togetherKey = _getAPIKey('together') ?? 'demo-key';
+
+      // Initialize LangChain.js providers
+      final openaiKey = _getAPIKey('openai') ?? 'demo-key';
+      final googleKey = _getAPIKey('google') ?? 'demo-key';
+
+      if (openaiKey != 'demo-key') {
+        _openAI = ChatOpenAI(apiKey: openaiKey);
+      }
+
+      if (googleKey != 'demo-key') {
+        _googleAI = ChatGoogleGenerativeAI(apiKey: googleKey);
+      }
+
+      // Initialize MDO providers
+      _claudeMDO = AnthropicClaudeMDOProvider(apiKey: claudeKey);
+      _ollamaMDO = OllamaMDOProvider(baseUrl: ollamaUrl);
+      _huggingFaceMDO = HuggingFaceMDOProvider(apiKey: hfKey);
+      _togetherMDO = TogetherAIMDOProvider(apiKey: togetherKey);
+
+      // Initialize new providers
+      _azureOpenAIMDO = AzureOpenAIProvider(
+        apiKey: _getAPIKey('azure-openai') ?? 'demo-key',
+        endpoint:
+            _getAPIKey('azure-endpoint') ?? 'https://demo.openai.azure.com/',
+        deploymentId: _getAPIKey('azure-deployment') ?? 'gpt-35-turbo',
+      );
+      _cohereMDO = CohereProvider(apiKey: _getAPIKey('cohere') ?? 'demo-key');
+      _mistralAIMDO =
+          MistralAIProvider(apiKey: _getAPIKey('mistral') ?? 'demo-key');
+      _stabilityAIMDO =
+          StabilityAIProvider(apiKey: _getAPIKey('stability') ?? 'demo-key');
+
+      // Initialize all providers
+      await _initializeAllProviders();
+
+      _isInitialized = true;
+      _logger.i(
+          '✅ Comprehensive AI Provider Manager initialized with 7 providers');
+      _logger.i('📊 Models available: ${_getAvailableModelsCount()}');
+      _logger.i('🎯 Ready for maximum LLM coverage');
+    } catch (e) {
+      _logger.e('❌ Failed to initialize Comprehensive AI Provider Manager',
+          error: e);
+      _isInitialized = true; // Continue with available providers
+    }
+  }
+
+  /// Initialize all providers in parallel
+  Future<void> _initializeAllProviders() async {
+    final futures = [
+      _initializeProvider('Anthropic Claude', _claudeMDO, (p) {}),
+      _initializeProvider('Ollama', _ollamaMDO, (p) {}),
+      _initializeProvider('Hugging Face', _huggingFaceMDO, (p) {}),
+      _initializeProvider('Together AI', _togetherMDO, (p) {}),
+      _initializeProvider('Azure OpenAI', _azureOpenAIMDO, (p) {}),
+      _initializeProvider('Cohere', _cohereMDO, (p) {}),
+      _initializeProvider('Mistral AI', _mistralAIMDO, (p) {}),
+      _initializeProvider('Stability AI', _stabilityAIMDO, (p) {}),
+    ];
+
+    await Future.wait(futures);
+    _selectBestAvailableProvider();
+  }
+
+  /// Initialize single provider
+  Future<void> _initializeProvider<T>(
+    String providerName,
+    dynamic provider,
+    void Function(dynamic) assign,
+  ) async {
+    try {
+      await provider.initialize();
+      assign(provider);
+      _logger.i('✅ $providerName MDO initialized successfully');
+    } catch (e) {
+      _logger.e('❌ $providerName initialization failed: $e');
+    }
+  }
+
+  /// Get API key for provider
+  String? _getAPIKey(String provider) {
+    // In production, these would come from secure storage
+    // For demo, we'll use placeholders
+    switch (provider.toLowerCase()) {
+      case 'openai':
+        return 'sk-placeholder-openai-key';
+      case 'google':
+        return 'sk-placeholder-google-key';
+      case 'claude':
+        return 'sk-placeholder-claude-key';
+      case 'azure-openai':
+        return 'sk-placeholder-azure-openai-key';
+      case 'azure-endpoint':
+        return 'https://demo.openai.azure.com/';
+      case 'azure-deployment':
+        return 'gpt-35-turbo';
+      case 'cohere':
+        return 'sk-placeholder-cohere-key';
+      case 'mistral':
+        return 'sk-placeholder-mistral-key';
+      case 'stability':
+        return 'sk-placeholder-stability-key';
+      case 'ollama':
+        return 'http://localhost:11434'; // Default for local
+      case 'huggingface':
+        return 'hf-placeholder-hf-token';
+      case 'together':
+        return 'sk-placeholder-together-key';
+      default:
+        return null;
+    }
+  }
+
+  /// Select best available provider
+  Future<void> _selectBestAvailableProvider() async {
+    // Check LangChain.js providers first
+    if (_openAI != null) {
+      _currentProvider = 'openai';
+      _currentModel = _openAI;
+      _logger.i('🎯 Auto-selected best provider: OpenAI (strength: 10)');
+      return;
+    }
+
+    if (_googleAI != null) {
+      _currentProvider = 'google';
+      _currentModel = _googleAI;
+      _logger.i('🎯 Auto-selected best provider: Google AI (strength: 9)');
+      return;
+    }
+
+    // Check MDO providers
+    final providers = [
+      {'name': 'claude', 'provider': _claudeMDO, 'strength': 9},
+      {'name': 'azure-openai', 'provider': _azureOpenAIMDO, 'strength': 10},
+      {'name': 'cohere', 'provider': _cohereMDO, 'strength': 8},
+      {'name': 'mistral-ai', 'provider': _mistralAIMDO, 'strength': 9},
+      {'name': 'stability-ai', 'provider': _stabilityAIMDO, 'strength': 7},
+      {'name': 'ollama', 'provider': _ollamaMDO, 'strength': 7},
+      {'name': 'huggingface', 'provider': _huggingFaceMDO, 'strength': 6},
+      {'name': 'together', 'provider': _togetherMDO, 'strength': 7},
+    ];
+
+    // Select provider with highest strength score
+    providers.sort((a, b) {
+      final aStrength = a['strength'] as int;
+      final bStrength = b['strength'] as int;
+      return bStrength.compareTo(aStrength);
+    });
+
+    // Try to find an initialized provider
+    for (final provider in providers) {
+      final providerName = provider['name'] as String;
+      final providerInstance = provider['provider'] as dynamic;
+
+      // Check if provider is initialized (simple check)
+      if (providerInstance != null) {
+        _currentProvider = providerName;
+        _currentModel = providerInstance;
+        _logger.i(
+          '🎯 Auto-selected best provider: $providerName (strength: ${provider['strength']})',
+        );
+        return;
+      }
+    }
+
+    _logger.w('⚠️ No providers available');
+  }
+
+  /// Get available models for current provider (private method)
+  List<Map<String, dynamic>> _getAvailableModelsForProvider(
+      String providerName) {
+    return getAvailableModelsForProvider(providerName);
+  }
+
+  /// Get total available models count
+  int _getAvailableModelsCount() {
+    int total = 0;
+
+    if (_openAI != null) {
+      total += _getAvailableModelsForProvider('openai').length;
+    }
+    if (_googleAI != null) {
+      total += _getAvailableModelsForProvider('google').length;
+    }
+    total += _getAvailableModelsForProvider('claude').length;
+    total += _getAvailableModelsForProvider('ollama').length;
+    total += _getAvailableModelsForProvider('huggingface').length;
+    total += _getAvailableModelsForProvider('together').length;
+
+    return total;
+  }
+
+  /// Switch to specific provider
+  Future<bool> switchToProvider(String provider) async {
+    if (!_isInitialized) return false;
+
+    try {
+      switch (provider.toLowerCase()) {
+        case 'openai':
+          if (_openAI != null) {
+            _currentProvider = 'openai';
+            _currentModel = _openAI;
+            _logger.i('✅ Switched to OpenAI');
+            return true;
+          }
+          break;
+        case 'google':
+          if (_googleAI != null) {
+            _currentProvider = 'google';
+            _currentModel = _googleAI;
+            _logger.i('✅ Switched to Google AI');
+            return true;
+          }
+          break;
+        case 'claude':
+          _currentProvider = 'claude';
+          _currentModel = _claudeMDO;
+          _logger.i('✅ Switched to Anthropic Claude');
+          return true;
+        case 'azure-openai':
+          _currentProvider = 'azure-openai';
+          _currentModel = _azureOpenAIMDO;
+          _logger.i('✅ Switched to Azure OpenAI');
+          return true;
+        case 'cohere':
+          _currentProvider = 'cohere';
+          _currentModel = _cohereMDO;
+          _logger.i('✅ Switched to Cohere');
+          return true;
+        case 'mistral-ai':
+          _currentProvider = 'mistral-ai';
+          _currentModel = _mistralAIMDO;
+          _logger.i('✅ Switched to Mistral AI');
+          return true;
+        case 'stability-ai':
+          _currentProvider = 'stability-ai';
+          _currentModel = _stabilityAIMDO;
+          _logger.i('✅ Switched to Stability AI');
+          return true;
+        case 'ollama':
+          _currentProvider = 'ollama';
+          _currentModel = _ollamaMDO;
+          _logger.i('✅ Switched to Ollama');
+          return true;
+        case 'huggingface':
+          _currentProvider = 'huggingface';
+          _currentModel = _huggingFaceMDO;
+          _logger.i('✅ Switched to Hugging Face');
+          return true;
+        case 'together':
+          _currentProvider = 'together';
+          _currentModel = _togetherMDO;
+          _logger.i('✅ Switched to Together AI');
+          return true;
+        default:
+          _logger.w('Unknown provider: $provider');
+          return false;
+      }
+    } catch (e) {
+      _logger.e('Failed to switch to $provider: $e');
+      return false;
+    }
+    return false;
+  }
+
+  /// Generate completion with current provider
+  Future<String> generateCompletion(String prompt,
+      {Map<String, dynamic>? options}) async {
+    if (!_isInitialized || _currentModel == null) {
+      return 'Error: Provider not initialized';
+    }
+
+    try {
+      switch (_currentProvider) {
+        case 'openai':
+          if (_openAI != null) {
+            // Use the LangChain.js API pattern
+            final result = await _openAI.invoke(PromptValue.string(prompt));
+            return result.outputAsString;
+          }
+          break;
+        case 'google':
+          if (_googleAI != null) {
+            // Use the LangChain.js API pattern
+            final result = await _googleAI.invoke(PromptValue.string(prompt));
+            return result.outputAsString;
+          }
+          break;
+        case 'claude':
+          final result = await _claudeMDO.generateCompletion(prompt);
+          return result;
+        case 'azure-openai':
+          final result = await _azureOpenAIMDO.generateCompletion(prompt);
+          return result;
+        case 'cohere':
+          final result = await _cohereMDO.generateCompletion(prompt);
+          return result;
+        case 'mistral-ai':
+          final result = await _mistralAIMDO.generateCompletion(prompt);
+          return result;
+        case 'stability-ai':
+          final result = await _stabilityAIMDO.generateCompletion(prompt);
+          return result;
+        case 'ollama':
+          final result = await _ollamaMDO.generateCompletion(prompt);
+          return result;
+        case 'huggingface':
+          final result = await _huggingFaceMDO.generateCompletion(prompt);
+          return result;
+        case 'together':
+          final result = await _togetherMDO.generateCompletion(prompt);
+          return result;
+        default:
+          return 'Error: Unknown provider';
+      }
+    } catch (e) {
+      _logger.e('LLM generation failed', error: e);
+      return 'Error: ${e.toString()}';
+    }
+
+    // Fallback if none of the providers worked
+    return 'Error: No provider available';
+  }
+
+  /// Generate streaming completion
+  Stream<String> generateStreamingCompletion(String prompt,
+      {Map<String, dynamic>? options}) async* {
+    if (!_isInitialized || _currentModel == null) return;
+
+    try {
+      switch (_currentProvider) {
+        case 'openai':
+          if (_openAI != null) {
+            // Use the LangChain.js API pattern
+            final stream = _openAI.stream(PromptValue.string(prompt));
+            await for (final chunk in stream) {
+              yield chunk.outputAsString;
+            }
+          }
+          break;
+        case 'google':
+          if (_googleAI != null) {
+            // Use the LangChain.js API pattern
+            final stream = _googleAI.stream(PromptValue.string(prompt));
+            await for (final chunk in stream) {
+              yield chunk.outputAsString;
+            }
+          }
+          break;
+        case 'claude':
+          final stream = _claudeMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'azure-openai':
+          final stream = _azureOpenAIMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'cohere':
+          final stream = _cohereMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'mistral-ai':
+          final stream = _mistralAIMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'stability-ai':
+          final stream = _stabilityAIMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'ollama':
+          final stream = _ollamaMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'huggingface':
+          final stream = _huggingFaceMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        case 'together':
+          final stream = _togetherMDO.generateStreamingCompletion(prompt);
+          await for (final chunk in stream) {
+            yield chunk;
+          }
+          break;
+        default:
+          yield 'Error: No streaming provider available';
+      }
+    } catch (e) {
+      _logger.e('Streaming completion failed', error: e);
+      yield 'Error: ${e.toString()}';
+    }
+  }
+
+  /// Get provider capabilities
+  Map<String, dynamic> getProviderCapabilities() {
+    switch (_currentProvider) {
+      case 'openai':
+        return {
+          'provider': 'OpenAI',
+          'models': _getAvailableModelsForProvider('openai'),
+          'isInitialized': _openAI != null,
+          'capabilities': {
+            'strength': 10,
+            'supportsStreaming': true,
+            'supportsVision': true,
+            'supportsTools': true,
+            'supportsFunctionCalling': true,
+            'maxTokens': 128000,
+            'costPerToken': 'high',
+            'reasoning': 'excellent',
+            'speed': 'medium',
+            'contextWindow': '128k',
+          },
+        };
+      case 'google':
+        return {
+          'provider': 'Google AI',
+          'models': _getAvailableModelsForProvider('google'),
+          'isInitialized': _googleAI != null,
+          'capabilities': {
+            'strength': 8,
+            'supportsStreaming': true,
+            'supportsVision': true,
+            'supportsTools': false,
+            'supportsFunctionCalling': false,
+            'maxTokens': 8192,
+            'costPerToken': 'low',
+            'reasoning': 'good',
+            'speed': 'fast',
+            'contextWindow': '32k',
+          },
+        };
+      case 'claude':
+        return {
+          'provider': 'Anthropic Claude',
+          'models': _getAvailableModelsForProvider('claude'),
+          'isInitialized': true,
+          'capabilities': {
+            'strength': 9,
+            'supportsStreaming': true,
+            'supportsVision': true,
+            'supportsTools': true,
+            'supportsFunctionCalling': true,
+            'maxTokens': 200000,
+            'costPerToken': 'very_high',
+            'reasoning': 'excellent',
+            'speed': 'medium',
+            'contextWindow': '200k',
+          },
+        };
+      case 'ollama':
+        return {
+          'provider': 'Ollama',
+          'models': _getAvailableModelsForProvider('ollama'),
+          'isInitialized': true,
+          'capabilities': {
+            'strength': 7,
+            'supportsStreaming': true,
+            'supportsVision': false,
+            'supportsTools': true,
+            'supportsFunctionCalling': false,
+            'maxTokens': 4096,
+            'costPerToken': 'free',
+            'reasoning': 'good',
+            'speed': 'slow',
+            'contextWindow': '4k',
+          },
+        };
+      case 'huggingface':
+        return {
+          'provider': 'Hugging Face',
+          'models': _getAvailableModelsForProvider('huggingface'),
+          'isInitialized': true,
+          'capabilities': {
+            'strength': 6,
+            'supportsStreaming': true,
+            'supportsVision': true,
+            'supportsTools': true,
+            'supportsFunctionCalling': true,
+            'maxTokens': 'variable',
+            'costPerToken': 'free',
+            'reasoning': 'variable',
+            'speed': 'variable',
+            'contextWindow': 'variable',
+          },
+        };
+      case 'together':
+        return {
+          'provider': 'Together AI',
+          'models': _getAvailableModelsForProvider('together'),
+          'isInitialized': true,
+          'capabilities': {
+            'strength': 7,
+            'supportsStreaming': true,
+            'supportsVision': false,
+            'supportsTools': true,
+            'supportsFunctionCalling': true,
+            'maxTokens': 60000,
+            'costPerToken': 'low',
+            'reasoning': 'good',
+            'speed': 'fast',
+            'contextWindow': '60k',
+          },
+        };
+      default:
+        return {
+          'provider': 'None',
+          'models': [],
+          'isInitialized': false,
+          'capabilities': {
+            'strength': 0,
+            'supportsStreaming': false,
+            'supportsVision': false,
+            'supportsTools': false,
+            'supportsFunctionCalling': false,
+            'maxTokens': 0,
+            'costPerToken': 'unknown',
+            'reasoning': 'none',
+            'speed': 'none',
+            'contextWindow': 'none',
+          },
+        };
+    }
+  }
+
+  /// Get status summary
+  Map<String, dynamic> getStatusSummary() {
+    return {
+      'currentProvider': _currentProvider,
+      'currentModel': _currentModel,
+      'isInitialized': _isInitialized,
+      'capabilities': getProviderCapabilities(),
+      'totalModelsAvailable': _getAvailableModelsCount(),
+    };
+  }
+
+  /// Get available models for a specific provider (public method)
+  List<Map<String, dynamic>> getAvailableModelsForProvider(
+      String providerName) {
+    switch (providerName.toLowerCase()) {
+      case 'openai':
+        return [
+          {'id': 'gpt-4', 'name': 'GPT-4', 'context': 8192},
+          {'id': 'gpt-4-turbo', 'name': 'GPT-4 Turbo', 'context': 128000},
+          {'id': 'gpt-3.5-turbo', 'name': 'GPT-3.5 Turbo', 'context': 4096},
+          {'id': 'gpt-4-32k', 'name': 'GPT-4 32K', 'context': 32768},
+        ];
+      case 'google':
+        return [
+          {'id': 'gemini-pro', 'name': 'Gemini Pro', 'context': 32768},
+          {
+            'id': 'gemini-pro-vision',
+            'name': 'Gemini Pro Vision',
+            'context': 16384
+          },
+          {'id': 'palm-2', 'name': 'PaLM 2', 'context': 8192},
+        ];
+      case 'claude':
+        return [
+          {'id': 'claude-3-opus', 'name': 'Claude 3 Opus', 'context': 200000},
+          {
+            'id': 'claude-3-sonnet',
+            'name': 'Claude 3 Sonnet',
+            'context': 200000
+          },
+          {'id': 'claude-3-haiku', 'name': 'Claude 3 Haiku', 'context': 200000},
+        ];
+      case 'azure-openai':
+        return [
+          {'id': 'gpt-35-turbo', 'name': 'GPT-3.5 Turbo', 'context': 4096},
+          {'id': 'gpt-4', 'name': 'GPT-4', 'context': 8192},
+          {'id': 'gpt-4-32k', 'name': 'GPT-4 32K', 'context': 32768},
+        ];
+      case 'cohere':
+        return [
+          {'id': 'command', 'name': 'Command', 'context': 4096},
+          {'id': 'command-nightly', 'name': 'Command Nightly', 'context': 4096},
+          {'id': 'command-light', 'name': 'Command Light', 'context': 4096},
+          {'id': 'command-r', 'name': 'Command R+', 'context': 128000},
+        ];
+      case 'mistral-ai':
+        return [
+          {'id': 'mistral-tiny', 'name': 'Mistral Tiny', 'context': 8192},
+          {'id': 'mistral-small', 'name': 'Mistral Small', 'context': 8192},
+          {'id': 'mistral-medium', 'name': 'Mistral Medium', 'context': 8192},
+          {'id': 'mistral-large', 'name': 'Mistral Large', 'context': 32768},
+          {'id': 'mistral-next', 'name': 'Mistral Next', 'context': 32768},
+        ];
+      case 'stability-ai':
+        return [
+          {
+            'id': 'stable-diffusion-xl',
+            'name': 'Stable Diffusion XL',
+            'context': 2048
+          },
+          {
+            'id': 'stable-diffusion-2.1',
+            'name': 'Stable Diffusion 2.1',
+            'context': 2048
+          },
+          {'id': 'sdxl-turbo', 'name': 'SDXL Turbo', 'context': 2048},
+        ];
+      case 'ollama':
+        return [
+          {'id': 'llama2', 'name': 'Llama 2', 'context': 4096},
+          {
+            'id': 'llama2-uncensored',
+            'name': 'Llama 2 Uncensored',
+            'context': 4096
+          },
+          {'id': 'mistral', 'name': 'Mistral', 'context': 8192},
+          {'id': 'codellama', 'name': 'Code Llama', 'context': 16384},
+          {'id': 'vicuna', 'name': 'Vicuna', 'context': 4096},
+        ];
+      case 'huggingface':
+        return [
+          {'id': 'llama-2', 'name': 'Llama 2', 'context': 4096},
+          {'id': 'falcon', 'name': 'Falcon', 'context': 2048},
+          {'id': 'mistral', 'name': 'Mistral', 'context': 8192},
+          {'id': 'gpt-2', 'name': 'GPT-2', 'context': 1024},
+        ];
+      default:
+        return [];
+    }
+  }
+}

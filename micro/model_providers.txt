@@ -1,0 +1,21 @@
+# AI Provider Configuration
+#
+# Available LLM Providers and Models
+#
+# Commercial Providers
+# OpenAI - gpt-4o, gpt-4o-mini, gpt-3.5-turbo
+# Google AI - gemini-1.5-pro, gemini-1.5-flash
+# Anthropic Claude - claude-3.5-sonnet, claude-3-opus, claude-3-haiku
+#
+# Open Source Providers
+# Ollama - llama-3.2, llama-3.1, gemma-2, mistral-7b, qwen-2.5
+# Hugging Face - All open source models
+#
+# Multi-Model Platforms
+# Together AI - Multiple provider access
+#
+# Custom/Local Hosting
+# Local LLM server support
+#
+# Enterprise Solutions
+# Azure OpenAI, Google Vertex AI, AWS Bedrock

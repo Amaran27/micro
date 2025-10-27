@@ -41,6 +41,8 @@ class AppConstants {
   static const String authTokenKey = 'auth_token';
   static const String deviceIdKey = 'device_id';
   static const String onboardingCompleteKey = 'onboarding_complete';
+  static const String permissionsSetupCompleteKey =
+      'permissions_setup_complete';
 
   // Error Messages
   static const String genericErrorMessage = 'An unexpected error occurred';

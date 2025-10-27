@@ -1,22 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'config/app_config.dart';
 import 'core/utils/logger.dart';
 import 'presentation/providers/app_providers.dart';
 import 'presentation/theme/app_theme.dart';
+import 'presentation/routes/app_router.dart';
+import 'infrastructure/permissions/services/store_compliant_permissions_manager.dart';
+import 'infrastructure/permissions/services/store_policy_validator.dart';
+import 'infrastructure/permissions/services/runtime_permission_requester.dart';
+import 'infrastructure/permissions/services/permission_auditor.dart';
+import 'presentation/providers/ai_providers.dart';
+import 'infrastructure/ai/ai_provider_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
 
   // Initialize logger
   await logger.initialize();
   logger.info('Starting Micro app v${AppConfig.appVersion}');
 
-  // Run the app with Riverpod
+  // Initialize AI Provider Configuration
+  final aiProviderConfig = AIProviderConfig();
+  await aiProviderConfig.initialize();
+
+  // Override the sharedPreferencesProvider with the actual instance
+  // Create a simple permissions manager for testing
+  final permissionsManager = StoreCompliantPermissionsManager(
+    policyValidator: StorePolicyValidator(),
+    requester: RuntimePermissionRequester(),
+    auditor: PermissionAuditor(),
+  );
+
   runApp(
-    const ProviderScope(
-      child: MicroApp(),
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        permissionsManagerProvider.overrideWithValue(permissionsManager),
+        aiProviderConfigProvider.overrideWithValue(aiProviderConfig),
+      ],
+      child: const MicroApp(),
     ),
   );
 }
@@ -26,8 +53,11 @@ class MicroApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final appTheme = ref.watch(themeProvider);
-    final appRouter = ref.watch(appRouterProvider);
+    // Initialize ModelSelectionService by watching the provider
+    ref.watch(initializedModelSelectionServiceProvider);
+
+    // For now, using default theme and router
+    final appRouter = AppRouter.router;
 
     return MaterialApp.router(
       title: AppConfig.appName,
@@ -35,7 +65,7 @@ class MicroApp extends ConsumerWidget {
           AppConfig.environment == Environment.development,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: appTheme,
+      themeMode: ThemeMode.system,
 
       // Localization
       localizationsDelegates: const [

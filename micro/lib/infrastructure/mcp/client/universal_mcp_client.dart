@@ -1,8 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'package:collection/collection.dart';
-import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/interfaces/i_universal_mcp_client.dart';
@@ -1133,7 +1130,7 @@ class UniversalMCPClient implements IUniversalMCPClient {
   }
 
   void _validateImportedData(Map<String, dynamic> data) {
-    if (!data.containsKey('tools') || !(data['tools'] is List)) {
+    if (!data.containsKey('tools') || data['tools'] is! List) {
       throw McpConfigurationException(
         'Invalid import data: missing or invalid tools list',
       );
@@ -1146,7 +1143,7 @@ class UniversalMCPClient implements IUniversalMCPClient {
     for (final toolData in tools) {
       if (toolData is Map<String, dynamic>) {
         try {
-          final tool = Tool.fromJson(toolData as Map<String, dynamic>);
+          final tool = Tool.fromJson(toolData);
           _toolCache[tool.id] = tool;
         } catch (e) {
           _logger.warning('Failed to import tool', error: e);
@@ -1216,7 +1213,7 @@ class McpServerConnection {
 
   bool _isConnected = false;
   DateTime _lastPing = DateTime.now();
-  Duration _responseTime = Duration.zero;
+  final Duration _responseTime = Duration.zero;
 
   McpServerConnection({
     required this.url,

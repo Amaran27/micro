@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'unified_provider_settings.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -9,12 +10,58 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Settings'),
       ),
-      body: const Center(
-        child: Text(
-          'Settings & Configuration\n(Coming Soon)',
-          style: TextStyle(fontSize: 18),
-          textAlign: TextAlign.center,
-        ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          // AI Providers Section
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.smart_toy),
+              title: const Text('AI Providers'),
+              subtitle:
+                  const Text('Manage AI model providers and configurations'),
+              trailing: const Icon(Icons.arrow_forward_ios),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UnifiedProviderSettings(),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // General Settings Section
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.settings_applications),
+              title: Text('General'),
+              subtitle: Text('App preferences and settings'),
+              trailing: Icon(Icons.arrow_forward_ios),
+            ),
+          ),
+
+          // Privacy Section
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.security),
+              title: Text('Privacy & Security'),
+              subtitle: Text('Privacy settings and security options'),
+              trailing: Icon(Icons.arrow_forward_ios),
+            ),
+          ),
+
+          // About Section
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.info),
+              title: Text('About'),
+              subtitle: Text('App information and version details'),
+              trailing: Icon(Icons.arrow_forward_ios),
+            ),
+          ),
+        ],
       ),
     );
   }

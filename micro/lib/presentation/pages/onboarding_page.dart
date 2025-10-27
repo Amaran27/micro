@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../providers/app_providers.dart';
 import '../../core/constants.dart';
+import '../../core/utils/logger.dart';
+import '../providers/app_providers.dart';
 
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
@@ -105,10 +106,53 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     }
   }
 
-  void _completeOnboarding() {
-    ref.read(onboardingCompleteProvider.notifier).completeOnboarding();
-    // Navigate to home page after completing onboarding
-    context.go(RouteConstants.home);
+  void _completeOnboarding() async {
+    try {
+      logger.info('Starting onboarding completion process');
+
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Save onboarding completion state
+      logger.info('Saving onboarding completion state');
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setBool(AppConstants.onboardingCompleteKey, true);
+      logger.info('Onboarding completion state saved successfully');
+
+      // Close loading indicator
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Navigate to home page after completing onboarding
+      if (mounted) {
+        logger.info('Navigating to home page');
+        context.go(RouteConstants.home);
+      }
+    } catch (e) {
+      logger.error('Failed to complete onboarding: $e');
+
+      // Close loading indicator if open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Handle error during onboarding completion
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to complete onboarding: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -167,17 +211,24 @@ class OnboardingItemWidget extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 48),
-          ElevatedButton(
-            onPressed: isLast ? onGetStarted : onNext,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: isLast ? onGetStarted : onNext,
+              style: ElevatedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
               ),
-            ),
-            child: Text(
-              isLast ? 'Get Started' : 'Next',
-              style: const TextStyle(fontSize: 16),
+              child: Text(
+                isLast ? 'Get Started' : 'Next',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
             ),
           ),
         ],

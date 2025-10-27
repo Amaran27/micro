@@ -1,4 +1,3 @@
-import 'package:equatable/equatable.dart';
 import '../../../../core/exceptions/app_exception.dart';
 
 /// Base exception for all MCP-related errors
@@ -79,6 +78,7 @@ class McpToolExecutionException extends McpException {
 
 /// Exception thrown when MCP tool discovery fails
 class McpToolDiscoveryException extends McpException {
+  @override
   final String? serverName;
 
   const McpToolDiscoveryException(

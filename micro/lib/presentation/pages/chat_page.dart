@@ -5,16 +5,11 @@ class ChatPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chat'),
-      ),
-      body: const Center(
-        child: Text(
-          'Chat Interface\n(Coming Soon)',
-          style: TextStyle(fontSize: 18),
-          textAlign: TextAlign.center,
-        ),
+    return const Center(
+      child: Text(
+        'Chat Interface\n(Coming Soon)',
+        style: TextStyle(fontSize: 18),
+        textAlign: TextAlign.center,
       ),
     );
   }
