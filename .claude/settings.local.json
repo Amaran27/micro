@@ -5,7 +5,8 @@
       "Bash(adb:*)",
       "Bash(flutter devices:*)",
       "Bash(flutter run:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []

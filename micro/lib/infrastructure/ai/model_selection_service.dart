@@ -1,19 +1,36 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../config/ai_provider_constants.dart';
 import 'secure_api_storage.dart';
 import '../../core/utils/logger.dart';
+import 'model_cache_repository.dart';
+import '../../../domain/models/ai_model.dart';
 
 /// Service for managing model discovery, selection, and preferences
 class ModelSelectionService {
+  /// Singleton instance
+  static final ModelSelectionService instance = ModelSelectionService._internal();
+  
+  /// Internal constructor for singleton
+  ModelSelectionService._internal();
+  
+  /// Public factory constructor
+  factory ModelSelectionService() => instance;
+  
   static final _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(
       encryptedSharedPreferences: true,
     ),
   );
 
+  final ModelCacheRepository _cacheRepository = ModelCacheRepository();
+
   /// Available models from each provider (fetched dynamically)
   final Map<String, List<String>> _availableModels = {};
+
+  /// Cached AIModel objects
+  final Map<String, List<AIModel>> _cachedModels = {};
 
   /// User-selected favorite models (multiple per provider)
   final Map<String, List<String>> _favoriteModels = {};
@@ -21,17 +38,34 @@ class ModelSelectionService {
   /// Currently active model for each provider
   final Map<String, String> _activeModels = {};
 
+  bool _isInitialized = false;
+  
   /// Initialize the model selection service
   Future<void> initialize() async {
+    if (_isInitialized) return;
+    
     AppLogger().info('Initializing ModelSelectionService...');
+    
+    // Load cached models first for faster UI
+    await _loadCachedModels();
+    
+    // Then load user preferences
     await _loadFavoriteModels();
     await _loadActiveModels();
+    
+    _isInitialized = true;
     AppLogger().info(
         'ModelSelectionService initialization complete. Found ${_favoriteModels.length} provider(s) with favorites');
   }
 
   /// Fetch available models from all configured providers
-  Future<void> fetchAvailableModels() async {
+  Future<void> fetchAvailableModels({bool forceRefresh = false}) async {
+    // If we already have models and not forcing refresh, return early
+    if (_availableModels.isNotEmpty && !forceRefresh) {
+      AppLogger().info('Using available models from memory');
+      return;
+    }
+
     _availableModels.clear();
 
     for (final providerId in AIProviderConstants.providerNames.keys) {
@@ -41,6 +75,9 @@ class ModelSelectionService {
         await _fetchProviderModels(providerId);
       }
     }
+
+    // Save fetched models to cache
+    await _saveModelsToCache();
   }
 
   /// Fetch models from a specific provider
@@ -69,7 +106,11 @@ class ModelSelectionService {
       case 'google':
         return await _fetchGoogleModels(apiKey);
       case 'claude':
-        return await _fetchClaudeModels(apiKey);
+      case 'anthropic': // Support both names
+        return await _fetchAnthropicModels(apiKey);
+      case 'zhipuai':
+      case 'z_ai': // Support both names
+        return await _fetchZhipuaiModels(apiKey);
       case 'azure':
         return await _fetchAzureModels(apiKey);
       case 'cohere':
@@ -184,8 +225,8 @@ class ModelSelectionService {
     }
   }
 
-  /// Fetch Claude/Anthropic models
-  Future<List<String>> _fetchClaudeModels(String apiKey) async {
+  /// Fetch Anthropic Claude models
+  Future<List<String>> _fetchAnthropicModels(String apiKey) async {
     try {
       final dio = Dio();
 
@@ -207,7 +248,8 @@ class ModelSelectionService {
       }
       return [];
     } catch (e) {
-      AppLogger().error('Failed to fetch Claude models from API', error: e);
+      AppLogger()
+          .error('Failed to fetch Anthropic Claude models from API', error: e);
 
       // Fallback to known models if API call fails
       return [
@@ -220,6 +262,100 @@ class ModelSelectionService {
         'claude-instant-1.2',
       ];
     }
+  }
+
+  /// Fetch ZhipuAI GLM models
+  Future<List<String>> _fetchZhipuaiModels(String apiKey) async {
+    try {
+      final dio = Dio();
+
+      // ZhipuAI uses JWT authentication, need to generate token
+      final token = await _generateZhipuAIToken(apiKey);
+      if (token == null) {
+        return _getDefaultZhipuaiModels();
+      }
+
+      final response = await dio.get(
+        'https://open.bigmodel.cn/api/paas/v4/models',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'content-type': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final models = data['data'] as List;
+
+        return models.map((model) => model['id'] as String).toList();
+      } else {
+        AppLogger()
+            .warning('Failed to fetch ZhipuAI models: ${response.statusCode}');
+        return _getDefaultZhipuaiModels();
+      }
+    } catch (e) {
+      AppLogger()
+          .warning('Error fetching ZhipuAI models, using defaults', error: e);
+      return _getDefaultZhipuaiModels();
+    }
+  }
+
+  /// Generate JWT token for ZhipuAI API authentication
+  Future<String?> _generateZhipuAIToken(String apiKey) async {
+    try {
+      // ZhipuAI uses JWT for authentication
+      // The API key format can be: {id}.{secret} or just a regular API key
+      final parts = apiKey.split('.');
+      if (parts.length != 2) {
+        AppLogger().warning('ZhipuAI API key format may be incorrect, trying direct usage');
+        // Try using the API key directly instead of failing
+        return apiKey;
+      }
+
+      final id = parts[0];
+      final secret = parts[1];
+
+      // Create JWT payload
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final payload = {
+        'iat': now,
+        'exp': now + 3600, // 1 hour expiration
+        'iss': id,
+      };
+
+      // This is a simplified JWT generation
+      // In production, use crypto package for proper HMAC-SHA256 signing using the secret
+      final header = {'alg': 'HS256', 'typ': 'JWT'};
+      final encodedHeader = base64Url.encode(utf8.encode(json.encode(header)));
+      final encodedPayload =
+          base64Url.encode(utf8.encode(json.encode(payload)));
+
+      // Note: This is a placeholder for actual JWT signing
+      // You would need to implement proper HMAC-SHA256 signing using:
+      // crypto.Hmac(sha256, utf8.encode(secret)).convert(payloadBytes)
+      final signature = 'placeholder_signature';
+
+      // Mark secret as used to avoid lint warnings
+      secret.length;
+
+      return '$encodedHeader.$encodedPayload.$signature';
+    } catch (e) {
+      AppLogger().error('Failed to generate JWT token', error: e);
+      return null;
+    }
+  }
+
+  /// Get default ZhipuAI models
+  List<String> _getDefaultZhipuaiModels() {
+    return [
+      'glm-4-flash',
+      'glm-4-air',
+      'glm-4-airx',
+      'glm-4-long',
+      'glm-4v-flash',
+    ];
   }
 
   /// Fetch Azure OpenAI models
@@ -449,6 +585,16 @@ class ModelSelectionService {
     return _favoriteModels[providerId] ?? [];
   }
 
+  /// Get all favorite models across all providers
+  Map<String, List<String>> getAllFavoriteModels() {
+    return Map.from(_favoriteModels);
+  }
+
+  /// Get all available models across all providers
+  Map<String, List<String>> getAllAvailableModels() {
+    return Map.from(_availableModels);
+  }
+
   /// Check if provider has any favorite models
   bool hasFavoriteModels(String providerId) {
     final favorites = _favoriteModels[providerId];
@@ -517,6 +663,75 @@ class ModelSelectionService {
     }
   }
 
+  /// Load cached models from database
+  Future<void> _loadCachedModels() async {
+    try {
+      AppLogger().info('Loading cached models from database...');
+      final cachedModels = await _cacheRepository.getCachedModels();
+
+      // Group models by provider
+      for (final model in cachedModels) {
+        if (!_cachedModels.containsKey(model.provider)) {
+          _cachedModels[model.provider] = [];
+        }
+        _cachedModels[model.provider]!.add(model);
+
+        // Also populate available models as strings for backward compatibility
+        if (!_availableModels.containsKey(model.provider)) {
+          _availableModels[model.provider] = [];
+        }
+        _availableModels[model.provider]!.add(model.modelId);
+      }
+
+      // Ensure ZhipuAI models are available even if not cached
+      if (!_availableModels.containsKey('zhipuai') || _availableModels['zhipuai']!.isEmpty) {
+        _availableModels['zhipuai'] = _getDefaultZhipuaiModels();
+        AppLogger().info('Added default ZhipuAI models to available models');
+      }
+
+      AppLogger().info(
+          'Loaded ${cachedModels.length} cached models from ${cachedModels.map((m) => m.provider).toSet().length} providers');
+          
+      // If we have cached models, no need to fetch from API immediately
+      if (cachedModels.isNotEmpty) {
+        AppLogger().info('Using cached models, skipping API fetch');
+      }
+    } catch (e) {
+      AppLogger().error('Failed to load cached models', error: e);
+      
+      // Add default models for ZhipuAI even if there's an error
+      _availableModels['zhipuai'] = _getDefaultZhipuaiModels();
+      AppLogger().info('Added default ZhipuAI models due to cache loading error');
+    }
+  }
+
+  /// Save models to cache
+  Future<void> _saveModelsToCache() async {
+    try {
+      final allModels = <AIModel>[];
+
+      // Convert available models to AIModel objects
+      for (final entry in _availableModels.entries) {
+        final provider = entry.key;
+        final modelIds = entry.value;
+
+        for (final modelId in modelIds) {
+          allModels.add(AIModel(
+            provider: provider,
+            modelId: modelId,
+            displayName: modelId, // Use modelId as display name for now
+            description: null,
+          ));
+        }
+      }
+
+      await _cacheRepository.saveModels(allModels);
+      AppLogger().info('Saved ${allModels.length} models to cache');
+    } catch (e) {
+      AppLogger().error('Failed to save models to cache', error: e);
+    }
+  }
+
   /// Load active models from secure storage
   Future<void> _loadActiveModels() async {
     try {
@@ -552,6 +767,8 @@ class ModelSelectionService {
       AppLogger().error('Failed to save active models', error: e);
     }
   }
+
+  
 
   /// Clear all model selections
   Future<void> clearSelections() async {

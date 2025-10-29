@@ -4,7 +4,10 @@ class AIProviderConstants {
   static const Map<String, String> providerNames = {
     'openai': 'OpenAI',
     'google': 'Google AI',
-    'claude': 'Claude/Anthropic',
+    'anthropic': 'Anthropic Claude',
+    'claude': 'Anthropic Claude', // Alternative name
+    'zhipuai': 'ZhipuAI GLM',
+    'z_ai': 'ZhipuAI GLM', // Alternative name for GLM
     'azure': 'Azure OpenAI',
     'cohere': 'Cohere',
     'mistral': 'Mistral AI',
@@ -17,7 +20,10 @@ class AIProviderConstants {
   static const Map<String, String> apiEndpoints = {
     'openai': 'https://api.openai.com/v1',
     'google': 'https://generativelanguage.googleapis.com/v1beta',
-    'claude': 'https://api.anthropic.com/v1',
+    'anthropic': 'https://api.anthropic.com/v1',
+    'claude': 'https://api.anthropic.com/v1', // Alternative endpoint
+    'zhipuai': 'https://open.bigmodel.cn/api/paas/v4',
+    'z_ai': 'https://open.bigmodel.cn/api/paas/v4', // Alternative endpoint
     'azure':
         'https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT',
     'cohere': 'https://api.cohere.com/v1',
@@ -28,18 +34,18 @@ class AIProviderConstants {
   };
 
   // Models are now fetched dynamically from provider APIs
-  // No more hardcoded models list
+  // Default fallback models for each provider
   static const Map<String, List<String>> defaultModels = {
-    // Empty lists - models will be fetched dynamically
-    'openai': [],
-    'google': [],
-    'claude': [],
-    'azure': [],
-    'cohere': [],
-    'mistral': [],
-    'stability': [],
-    'ollama': [],
-    'huggingface': [],
+    'openai': ['gpt-4o', 'gpt-4o-mini'],
+    'google': ['gemini-2.5-flash', 'gemini-1.5-pro'],
+    'claude': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+    'zhipuai': ['glm-4-flash', 'glm-4-air'],
+    'azure': ['gpt-4', 'gpt-35-turbo'],
+    'cohere': ['command-r-plus', 'command-r'],
+    'mistral': ['mistral-large-latest', 'mistral-small-latest'],
+    'stability': ['stable-diffusion-xl-1024-v1-0'],
+    'ollama': ['llama3.1', 'mistral'],
+    'huggingface': ['gpt2', 'distilgpt2'],
   };
 
   // Default Configuration Options
@@ -62,7 +68,11 @@ class AIProviderConstants {
       'maxTokens': 1000, // Will be updated based on model context window
       'temperature': 0.7,
       'topP': 1.0,
-      'topK': 40,
+    },
+    'zhipuai': {
+      'maxTokens': 1000, // Will be updated based on model context window
+      'temperature': 0.7,
+      'topP': 0.9,
     },
     'azure': {
       'maxTokens': 1000, // Will be updated based on model context window
@@ -104,6 +114,7 @@ class AIProviderConstants {
     'openai': 'https://platform.openai.com/api-keys',
     'google': 'https://aistudio.google.com/app/apikey',
     'claude': 'https://console.anthropic.com/',
+    'zhipuai': 'https://open.bigmodel.cn/usercenter/apikeys',
     'azure': 'https://portal.azure.com/',
     'cohere': 'https://cohere.com/api',
     'mistral': 'https://console.mistral.ai/',
@@ -116,7 +127,10 @@ class AIProviderConstants {
   static const Map<String, List<String>> requiredFields = {
     'openai': ['apiKey'],
     'google': ['apiKey'],
-    'claude': ['apiKey'],
+    'anthropic': ['apiKey'],
+    'claude': ['apiKey'], // Alternative name
+    'zhipuai': ['apiKey'],
+    'z_ai': ['apiKey'], // Alternative name
     'azure': ['apiKey', 'endpoint', 'deploymentName'],
     'cohere': ['apiKey'],
     'mistral': ['apiKey'],
@@ -130,6 +144,7 @@ class AIProviderConstants {
     'openai': 'OPENAI_API_KEY',
     'google': 'GOOGLE_AI_API_KEY',
     'claude': 'ANTHROPIC_API_KEY',
+    'zhipuai': 'ZHIPUAI_API_KEY',
     'azure': 'AZURE_OPENAI_API_KEY',
     'cohere': 'COHERE_API_KEY',
     'mistral': 'MISTRAL_API_KEY',

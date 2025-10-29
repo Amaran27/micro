@@ -1,8 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
+import 'package:state_notifier/state_notifier.dart';
 
 import '../../infrastructure/ai/ai_provider_config.dart';
 import '../../infrastructure/ai/model_selection_service.dart';
+import '../../infrastructure/ai/model_selection_notifier.dart';
 import '../../core/utils/logger.dart';
+import 'app_providers.dart';
 import '../../domain/models/autonomous/context_analysis.dart';
 
 /// Provider for logger
@@ -15,85 +19,89 @@ final aiProviderConfigProvider = Provider<AIProviderConfig>((ref) {
   return AIProviderConfig();
 });
 
-/// Provider for ModelSelectionService
-final modelSelectionServiceProvider = Provider<ModelSelectionService>((ref) {
-  final service = ModelSelectionService();
-  // Initialize the service when first accessed
-  ref.onDispose(() {
-    // Cleanup if needed
-  });
-  return service;
+/// Async notifier to manage favorite models loading
+class FavoriteModelsNotifier extends AsyncNotifier<Map<String, List<String>>> {
+  @override
+  Future<Map<String, List<String>>> build() async {
+    // Ensure the ModelSelectionService is initialized and return the
+    // persisted favorite models. This avoids returning an immediate
+    // empty map which caused the UI to think no favorites were set.
+    final service = await ref.watch(initializedModelSelectionServiceProvider.future);
+    return service.getAllFavoriteModels();
+  }
+
+  /// Manual refresh helper (keeps existing API for callers)
+  Future<void> loadFavoriteModels() async {
+    final service = ref.watch(modelSelectionServiceProvider);
+    state = await AsyncValue.guard(() async {
+      return service.getAllFavoriteModels();
+    });
+  }
+}
+
+/// Provider for favorite models using AsyncNotifierProvider (Riverpod 3.0+ pattern)
+final favoriteModelsProvider = AsyncNotifierProvider<FavoriteModelsNotifier, Map<String, List<String>>>(() {
+  return FavoriteModelsNotifier();
 });
 
-/// Provider for initialized ModelSelectionService
-final initializedModelSelectionServiceProvider =
-    FutureProvider<ModelSelectionService>((ref) async {
-  final service = ref.watch(modelSelectionServiceProvider);
-  await service.initialize();
-  await service.fetchAvailableModels();
-  return service;
-});
-
-/// Provider for favorite models across all providers
-final favoriteModelsProvider = Provider<Map<String, List<String>>>((ref) {
-  final serviceAsync = ref.watch(initializedModelSelectionServiceProvider);
-  return serviceAsync.when(
-    data: (service) {
-      final favorites = <String, List<String>>{};
-      // Get all provider IDs from constants
-      for (final providerId in [
-        'openai',
-        'google',
-        'claude',
-        'azure',
-        'cohere',
-        'mistral'
-      ]) {
-        favorites[providerId] = service.getFavoriteModels(providerId);
-      }
-      return favorites;
-    },
-    loading: () => <String, List<String>>{},
-    error: (_, __) => <String, List<String>>{},
-  );
-});
+/// Helper function to load favorite models
+void loadFavoriteModels(WidgetRef ref) {
+  ref.read(favoriteModelsProvider.notifier).loadFavoriteModels();
+}
 
 /// Provider for active models across all providers
-final activeModelsProvider = Provider<Map<String, String>>((ref) {
-  final serviceAsync = ref.watch(initializedModelSelectionServiceProvider);
-  return serviceAsync.when(
-    data: (service) => service.getAllActiveModels(),
-    loading: () => <String, String>{},
-    error: (_, __) => <String, String>{},
-  );
+final activeModelsProvider = FutureProvider<Map<String, String>>((ref) async {
+  final service = await ref.watch(initializedModelSelectionServiceProvider.future);
+  return service.getAllActiveModels();
 });
 
 /// Provider for current selected model
-final currentSelectedModelProvider = Provider<String?>((ref) {
-  final serviceAsync = ref.watch(initializedModelSelectionServiceProvider);
-  final favorites = ref.watch(favoriteModelsProvider);
-
-  return serviceAsync.when(
-    data: (service) {
-      // Get the first available active model
-      final activeModels = service.getAllActiveModels();
-      if (activeModels.isNotEmpty) {
-        return activeModels.values.first;
+final currentSelectedModelProvider = FutureProvider<String?>((ref) async {
+    final service = await ref.watch(initializedModelSelectionServiceProvider.future);
+  final prefs = ref.watch(sharedPreferencesProvider);
+  
+  // First try to get the last selected model from preferences
+  final lastSelectedModel = prefs.getString('last_selected_model');
+  if (lastSelectedModel != null) {
+    // Get the favorite models
+    final favorites = <String, List<String>>{};
+    for (final providerId in [
+      'openai',
+      'google',
+      'claude',
+      'anthropic',
+      'zhipuai',
+      'z_ai',
+      'azure',
+      'cohere',
+      'mistral'
+    ]) {
+      favorites[providerId] = service.getFavoriteModels(providerId);
+    }
+    
+    // Verify the model is still available in favorites
+    for (final models in favorites.values) {
+      if (models.contains(lastSelectedModel)) {
+        return lastSelectedModel;
       }
+    }
+  }
 
-      // Fall back to first favorite model
-      for (final providerId in ['openai', 'google', 'claude']) {
-        final providerFavorites = favorites[providerId] ?? [];
-        if (providerFavorites.isNotEmpty) {
-          return providerFavorites.first;
-        }
-      }
+  // Fall back to first available active model
+  final activeModels = service.getAllActiveModels();
+  if (activeModels.isNotEmpty) {
+    return activeModels.values.first;
+  }
 
-      return null;
-    },
-    loading: () => null,
-    error: (_, __) => null,
-  );
+  // Fall back to first favorite model
+  for (final providerId in ['openai', 'google', 'claude', 'anthropic', 'zhipuai', 'z_ai']) {
+    final providerFavorites = service.getFavoriteModels(providerId);
+    if (providerFavorites.isNotEmpty) {
+      return providerFavorites.first;
+    }
+  }
+
+  return null;
 });
 
 /// Provider for available models

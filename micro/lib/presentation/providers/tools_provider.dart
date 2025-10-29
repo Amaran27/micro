@@ -5,7 +5,7 @@ import '../../infrastructure/mcp/core/models/tool.dart';
 import '../../infrastructure/mcp/core/models/tool_call.dart' as tool_call;
 import '../../infrastructure/mcp/core/models/tool_result.dart';
 import '../../core/utils/logger.dart';
-import '../providers/autonomous_provider.dart';
+// Simple autonomous provider is defined in this file
 
 /// Tools state management class
 class ToolsState {
@@ -85,7 +85,7 @@ enum ToolExecutionStatus {
 class ToolsProvider extends Notifier<ToolsState> {
   UniversalMCPClient get _mcpClient => ref.watch(universalMcpClientProvider);
   AppLogger get _logger => ref.watch(loggerProvider);
-  AutonomousProvider get _autonomousProvider =>
+  SimpleAutonomousProvider get _autonomousProvider =>
       ref.watch(autonomousProviderProvider);
 
   @override
@@ -614,15 +614,24 @@ final toolsPerformanceMetricsProvider = Provider<Map<String, dynamic>>((ref) {
   return ref.watch(toolsProviderProvider).performanceMetrics;
 });
 
-// Placeholder providers that would be implemented elsewhere
+// Universal MCP Client provider
 final universalMcpClientProvider = Provider<UniversalMCPClient>((ref) {
-  throw UnimplementedError('Universal MCP Client provider must be implemented');
+  return UniversalMCPClient();
 });
 
 final loggerProvider = Provider<AppLogger>((ref) {
   return AppLogger();
 });
 
-final autonomousProviderProvider = Provider<AutonomousProvider>((ref) {
-  throw UnimplementedError('Autonomous Provider must be implemented');
+// Simple autonomous provider for now - implements a basic interface
+class SimpleAutonomousProvider {
+  Future<void> initialize() async {}
+  void setAutonomousEnabled(bool enabled) {}
+  bool get isAutonomousEnabled => false;
+  bool get isInitialized => true;
+  dynamic get currentContext => null;
+}
+
+final autonomousProviderProvider = Provider<SimpleAutonomousProvider>((ref) {
+  return SimpleAutonomousProvider();
 });

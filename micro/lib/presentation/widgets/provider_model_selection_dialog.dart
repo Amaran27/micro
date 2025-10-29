@@ -21,7 +21,7 @@ class ProviderModelSelectionDialog extends ConsumerStatefulWidget {
 
 class _ProviderModelSelectionDialogState
     extends ConsumerState<ProviderModelSelectionDialog> {
-  final ModelSelectionService _modelService = ModelSelectionService();
+  final ModelSelectionService _modelService = ModelSelectionService.instance;
   List<String> _availableModels = [];
   List<String> _selectedModels = [];
   bool _isLoading = true;
@@ -55,11 +55,11 @@ class _ProviderModelSelectionDialogState
     }
   }
 
-  Future<void> _fetchModels() async {
+  Future<void> _fetchModels({bool forceRefresh = false}) async {
     setState(() => _isFetching = true);
 
     try {
-      await _modelService.fetchAvailableModels();
+      await _modelService.fetchAvailableModels(forceRefresh: forceRefresh);
       final models = _modelService.getAvailableModels(widget.providerId);
       setState(() {
         _availableModels = models;

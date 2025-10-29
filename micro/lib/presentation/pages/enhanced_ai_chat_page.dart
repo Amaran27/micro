@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_gen_ai_chat_ui/flutter_gen_ai_chat_ui.dart';
+import 'package:go_router/go_router.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
 import 'package:micro/features/chat/presentation/providers/chat_provider.dart';
+import 'package:micro/presentation/providers/app_providers.dart';
 import 'package:micro/presentation/providers/ai_providers.dart';
+import 'package:micro/infrastructure/ai/model_selection_notifier.dart';
 
 /// Enhanced AI Chat Page with Markdown Support
 ///
@@ -23,8 +26,10 @@ class EnhancedAIChatPage extends ConsumerStatefulWidget {
 class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   late final ChatMessagesController _messagesController;
   late final ScrollController _scrollController;
-  String _currentModel = 'GPT-4'; // Default display name
-  String _currentModelId = 'gpt-4'; // Default model ID
+  String _currentModel = 'Loading...'; // Default display name
+  String? _currentModelId; // Default model ID - nullable now
+  // Tracks whether the loading dialog is currently visible so we can dismiss safely.
+  bool _loadingDialogVisible = false;
 
   @override
   void initState() {
@@ -39,12 +44,62 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     });
   }
 
-  void _loadInitialModel() {
-    final currentModel = ref.read(currentSelectedModelProvider);
-    if (currentModel != null) {
+  void _showLoadingDialog(BuildContext context) {
+    if (_loadingDialogVisible) return;
+    _loadingDialogVisible = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Loading models...'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _dismissLoadingDialog(BuildContext context) {
+    if (!_loadingDialogVisible) return;
+    _loadingDialogVisible = false;
+    try {
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    } catch (_) {}
+  }
+
+  void _loadInitialModel() async {
+    try {
+      // Get the current model using the new provider
+      final currentModelAsync = ref.read(currentSelectedModelProvider);
+      // Wait for the AsyncValue to be ready and extract the value
+      final currentModel = await currentModelAsync.when(
+        data: (value) => value,
+        loading: () => null,
+        error: (_, __) => null,
+      );
+      
+      if (currentModel != null) {
+        setState(() {
+          _currentModelId = currentModel;
+          _currentModel = _formatModelName(currentModel);
+        });
+      } else {
+        // No model selected yet, show a placeholder
+        setState(() {
+          _currentModelId = null;
+          _currentModel = 'Select a model';
+        });
+      }
+    } catch (e) {
       setState(() {
-        _currentModelId = currentModel;
-        _currentModel = _formatModelName(currentModel);
+        _currentModelId = null;
+        _currentModel = 'Error loading model';
       });
     }
   }
@@ -93,11 +148,16 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     final chatState = ref.watch(chatProvider);
 
     // Update current model when provider changes
-    ref.listen<String?>(currentSelectedModelProvider, (previous, next) {
-      if (next != null && next != _currentModelId) {
+    ref.listen<AsyncValue<String?>>(currentSelectedModelProvider, (previous, next) {
+      final nextValue = next.when(
+        data: (value) => value,
+        loading: () => null,
+        error: (_, __) => null,
+      );
+      if (nextValue != null && nextValue != _currentModelId) {
         setState(() {
-          _currentModelId = next;
-          _currentModel = _formatModelName(next);
+          _currentModelId = nextValue;
+          _currentModel = _formatModelName(nextValue);
         });
       }
     });
@@ -111,9 +171,12 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
           previous?.messages.length ?? 0,
         );
 
-        // Add them to our controller
+        print('DEBUG: New messages detected: ${newMessages.length}');
         for (final message in newMessages) {
+          print(
+              'DEBUG: Adding message to UI: ${message.type} - ${message.content}');
           final chatMessage = _convertToChatMessage(message);
+          print('DEBUG: Converted message: ${chatMessage.text}');
           _messagesController.addMessage(chatMessage);
         }
       }
@@ -154,18 +217,28 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
+                        color: _currentModelId != null
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : Theme.of(context)
+                                .colorScheme
+                                .errorContainer,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            Icons.smart_toy,
+                            _currentModelId != null
+                                ? Icons.smart_toy
+                                : Icons.warning,
                             size: 16,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimaryContainer,
+                            color: _currentModelId != null
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -173,18 +246,26 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onPrimaryContainer,
+                              color: _currentModelId != null
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onErrorContainer,
                             ),
                           ),
                           const SizedBox(width: 4),
                           Icon(
                             Icons.keyboard_arrow_down,
                             size: 16,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimaryContainer,
+                            color: _currentModelId != null
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer,
                           ),
                         ],
                       ),
@@ -364,6 +445,18 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     );
   }
 
+  void _showAboutDialog(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'Micro AI Assistant',
+      applicationVersion: '1.0.0',
+      applicationIcon: const Icon(Icons.smart_toy, size: 48),
+      children: [
+        const Text('An AI-powered assistant that helps you with various tasks using multiple AI models.'),
+      ],
+    );
+  }
+
   /// Format model ID to display name
   String _formatModelName(String modelId) {
     switch (modelId.toLowerCase()) {
@@ -389,9 +482,150 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     }
   }
 
-  void _showModelSelection(BuildContext context) {
-    final favoriteModels = ref.watch(favoriteModelsProvider);
+  /// Get provider display name
+  String _getProviderDisplayName(String providerId) {
+    switch (providerId.toLowerCase()) {
+      case 'google':
+        return 'Google AI';
+      case 'openai':
+        return 'OpenAI';
+      case 'zhipuai':
+      case 'z_ai':
+        return 'ZhipuAI GLM';
+      case 'claude':
+        return 'Anthropic Claude';
+      case 'azure':
+        return 'Azure OpenAI';
+      case 'cohere':
+        return 'Cohere';
+      case 'mistral':
+        return 'Mistral AI';
+      default:
+        return providerId.toUpperCase();
+    }
+  }
 
+  void _showModelSelection(BuildContext context) {
+    final favoriteModelsAsync = ref.read(favoriteModelsProvider);
+
+    // If the provider is currently loading, show a loading dialog and await
+    // the provider's future. Once it resolves, dismiss the dialog and
+    // present the sheet or the 'go to settings' message.
+    if (favoriteModelsAsync.isLoading) {
+      _showLoadingDialog(context);
+
+      // Await the provider's future and then act accordingly
+      ref.read(favoriteModelsProvider.future).then((favoriteModels) {
+        // Dismiss loading dialog
+        _dismissLoadingDialog(context);
+
+        if (favoriteModels.isEmpty ||
+            favoriteModels.values.every((models) => models.isEmpty)) {
+          // No favorite models available, show a message
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('No Favorite Models'),
+              content: const Text(
+                'You haven\'t selected any favorite models yet. Please go to Settings to configure AI providers and select your favorite models.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    // Navigate to settings
+                    GoRouter.of(context).go('/settings');
+                  },
+                  child: const Text('Go to Settings'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+
+        _presentFavoriteModelsSheet(context, favoriteModels);
+      }).catchError((e) {
+        _dismissLoadingDialog(context);
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to load models: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      });
+
+      return;
+    }
+
+    favoriteModelsAsync.when(
+      data: (favoriteModels) {
+        if (favoriteModels.isEmpty ||
+            favoriteModels.values.every((models) => models.isEmpty)) {
+          // No favorite models available, show a message
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('No Favorite Models'),
+              content: const Text(
+                'You haven\'t selected any favorite models yet. Please go to Settings to configure AI providers and select your favorite models.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    // Navigate to settings
+                    GoRouter.of(context).go('/settings');
+                  },
+                  child: const Text('Go to Settings'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+
+        _presentFavoriteModelsSheet(context, favoriteModels);
+      },
+      loading: () {
+        // Show loading indicator using the dialog helpers above.
+        _showLoadingDialog(context);
+      },
+      error: (error, stackTrace) {
+        // Show error message
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to load models: $error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _presentFavoriteModelsSheet(BuildContext context, Map<String, List<String>> favoriteModels) {
     showModalBottomSheet<void>(
       context: context,
       builder: (BuildContext context) {
@@ -413,92 +647,90 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 ),
                 const Divider(),
                 Expanded(
-                  child: favoriteModels.isEmpty
-                      ? const Center(
-                          child: Text('No favorite models available'),
-                        )
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: favoriteModels.length,
-                          itemBuilder: (context, index) {
-                            final providerId =
-                                favoriteModels.keys.elementAt(index);
-                            final models = favoriteModels[providerId] ?? [];
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: favoriteModels.length,
+                    itemBuilder: (context, index) {
+                      final providerId = favoriteModels.keys.elementAt(index);
+                      final models = favoriteModels[providerId] ?? [];
 
-                            if (models.isEmpty) return const SizedBox.shrink();
+                      if (models.isEmpty) return const SizedBox.shrink();
 
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 8),
-                                  child: Text(
-                                    providerId.toUpperCase(),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          color: Theme.of(context).primaryColor,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            child: Text(
+                              _getProviderDisplayName(providerId),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .primaryColor
+                                        .withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
                                   ),
-                                ),
-                                ...models.map((model) {
-                                  final isSelected = model == _currentModelId;
-                                  return ListTile(
-                                    title: Text(_formatModelName(model)),
-                                    subtitle: Text(model),
-                                    leading: Icon(
-                                      isSelected
-                                          ? Icons.radio_button_checked
-                                          : Icons.radio_button_unchecked,
-                                      color: isSelected
-                                          ? Theme.of(context).primaryColor
-                                          : null,
-                                    ),
-                                    trailing: isSelected
-                                        ? const Icon(Icons.check)
-                                        : null,
-                                    onTap: () async {
-                                      Navigator.pop(context);
+                            ),
+                          ),
+                          ...models.map((model) {
+                            final isSelected = model == _currentModelId;
+                            return ListTile(
+                              title: Text(model,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w500)),
+                              subtitle: Text(_getProviderDisplayName(providerId)),
+                              leading: Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked,
+                                color: isSelected
+                                    ? Theme.of(context).primaryColor
+                                    : null,
+                              ),
+                              trailing: isSelected ? const Icon(Icons.check) : null,
+                              onTap: () async {
+                                Navigator.pop(context);
 
-                                      // Update the active model in ModelSelectionService
-                                      try {
-                                        final modelService = ref.read(
-                                            modelSelectionServiceProvider);
-                                        await modelService.setActiveModel(
-                                            providerId, model);
+                                // Update the active model in ModelSelectionService
+                                try {
+                                  final modelService =
+                                      ref.read(modelSelectionServiceProvider);
+                                  await modelService.setActiveModel(
+                                      providerId, model);
 
-                                        setState(() {
-                                          _currentModelId = model;
-                                          _currentModel =
-                                              _formatModelName(model);
-                                        });
+                                  // Save the last selected model
+                                  final prefs =
+                                      ref.read(sharedPreferencesProvider);
+                                  await prefs.setString(
+                                      'last_selected_model', model);
 
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                              content: Text(
-                                                  'Model switched to ${_formatModelName(model)}')),
-                                        );
-                                      } catch (e) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                'Failed to switch model: $e'),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                      }
-                                    },
+                                  setState(() {
+                                    _currentModelId = model;
+                                    _currentModel = _formatModelName(model);
+                                  });
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Switched to $model')),
                                   );
-                                }),
-                              ],
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to switch model: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
                             );
-                          },
-                        ),
+                          }),
+                        ],
+                      );
+                    },
+                  ),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -506,20 +738,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
           ),
         );
       },
-    );
-  }
-
-  void _showAboutDialog(BuildContext context) {
-    showAboutDialog(
-      context: context,
-      applicationName: 'Micro AI Assistant',
-      applicationVersion: '1.0.0',
-      applicationIcon: const Icon(Icons.chat),
-      children: [
-        const Text(
-          'A privacy-first, autonomous agentic mobile assistant built with Flutter.',
-        ),
-      ],
     );
   }
 }

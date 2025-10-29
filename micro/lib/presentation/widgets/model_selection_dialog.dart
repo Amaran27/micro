@@ -14,7 +14,7 @@ class ModelSelectionDialog extends ConsumerStatefulWidget {
 }
 
 class _ModelSelectionDialogState extends ConsumerState<ModelSelectionDialog> {
-  final ModelSelectionService _modelService = ModelSelectionService();
+  final ModelSelectionService _modelService = ModelSelectionService.instance;
   final Map<String, List<String>> _availableModels = {};
   final Map<String, String> _activeModels = {};
   final Map<String, List<String>> _favoriteModels = {};
@@ -62,11 +62,11 @@ class _ModelSelectionDialogState extends ConsumerState<ModelSelectionDialog> {
     }
   }
 
-  Future<void> _fetchModels() async {
+  Future<void> _fetchModels({bool forceRefresh = false}) async {
     setState(() => _isFetching = true);
 
     try {
-      await _modelService.fetchAvailableModels();
+      await _modelService.fetchAvailableModels(forceRefresh: forceRefresh);
 
       // Update available models
       for (final providerId in AIProviderConstants.providerNames.keys) {
@@ -111,7 +111,7 @@ class _ModelSelectionDialogState extends ConsumerState<ModelSelectionDialog> {
                 if (!_isFetching)
                   IconButton(
                     icon: const Icon(Icons.refresh),
-                    onPressed: _fetchModels,
+                    onPressed: () => _fetchModels(forceRefresh: true),
                     tooltip: 'Refresh models',
                   ),
               ],

@@ -11,8 +11,9 @@ import 'infrastructure/permissions/services/store_compliant_permissions_manager.
 import 'infrastructure/permissions/services/store_policy_validator.dart';
 import 'infrastructure/permissions/services/runtime_permission_requester.dart';
 import 'infrastructure/permissions/services/permission_auditor.dart';
-import 'presentation/providers/ai_providers.dart';
 import 'infrastructure/ai/ai_provider_config.dart';
+import 'infrastructure/ai/model_selection_service.dart';
+import 'infrastructure/ai/model_selection_notifier.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,10 @@ Future<void> main() async {
   final aiProviderConfig = AIProviderConfig();
   await aiProviderConfig.initialize();
 
+  // Initialize ModelSelectionService (singleton)
+  final modelSelectionService = ModelSelectionService.instance;
+  await modelSelectionService.initialize();
+
   // Override the sharedPreferencesProvider with the actual instance
   // Create a simple permissions manager for testing
   final permissionsManager = StoreCompliantPermissionsManager(
@@ -42,6 +47,7 @@ Future<void> main() async {
         sharedPreferencesProvider.overrideWithValue(prefs),
         permissionsManagerProvider.overrideWithValue(permissionsManager),
         aiProviderConfigProvider.overrideWithValue(aiProviderConfig),
+        modelSelectionServiceProvider.overrideWithValue(modelSelectionService),
       ],
       child: const MicroApp(),
     ),

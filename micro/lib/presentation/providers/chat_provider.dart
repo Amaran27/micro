@@ -109,17 +109,14 @@ class ChatProvider extends Notifier<ChatState> {
 
       // Get AI response from AI provider
       try {
+        // Get the properly initialized AI provider config from main.dart
         final aiProviderConfig = ref.read(aiProviderConfigProvider);
         final currentModelId = ref.read(currentSelectedModelProvider);
 
+        _logger.info('Current selected model: $currentModelId');
+
         // Get the provider for the selected model
-        String providerId = 'google'; // Default to Google
-        if (currentModelId?.startsWith('gpt-') == true ||
-            currentModelId?.startsWith('o1-') == true) {
-          providerId = 'openai';
-        } else if (currentModelId?.startsWith('claude-') == true) {
-          providerId = 'claude';
-        }
+        String providerId = _detectProviderFromModel(currentModelId);
 
         // Get the provider and create a new model with the selected model ID
         final baseProvider = aiProviderConfig.getProvider(providerId);
@@ -172,7 +169,7 @@ class ChatProvider extends Notifier<ChatState> {
 
           // Generate response using the AI model
           final result = await chatModel.invoke(
-              lc.PromptValue.string(conversationHistory + '\nAssistant:'));
+              lc.PromptValue.string('$conversationHistory\nAssistant:'));
           final aiResponseContent = result.outputAsString;
 
           final aiResponse = ChatMessage.assistant(
@@ -338,6 +335,56 @@ class ChatProvider extends Notifier<ChatState> {
   /// Generate execution ID
   String _generateExecutionId() {
     return 'exec_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// Detect provider from model ID
+  String _detectProviderFromModel(String? modelId) {
+    if (modelId == null) return 'google'; // Default fallback
+
+    final lowerModelId = modelId.toLowerCase();
+
+    // OpenAI models
+    if (lowerModelId.startsWith('gpt-') ||
+        lowerModelId.startsWith('o1-') ||
+        lowerModelId.startsWith('dall-') ||
+        lowerModelId.startsWith('whisper-') ||
+        lowerModelId.startsWith('tts-')) {
+      return 'openai';
+    }
+
+    // Anthropic Claude models
+    if (lowerModelId.startsWith('claude-')) {
+      return 'claude';
+    }
+
+    // Google models
+    if (lowerModelId.startsWith('gemini-') ||
+        lowerModelId.startsWith('palm-') ||
+        lowerModelId.startsWith('bard-')) {
+      return 'google';
+    }
+
+    // Cohere models
+    if (lowerModelId.startsWith('command-') ||
+        lowerModelId.startsWith('base-') ||
+        lowerModelId.startsWith('embed-')) {
+      return 'cohere';
+    }
+
+    // Mistral models
+    if (lowerModelId.startsWith('mistral-') ||
+        lowerModelId.startsWith('codestral')) {
+      return 'mistral';
+    }
+
+    // Stability AI models
+    if (lowerModelId.contains('stable-diffusion') ||
+        lowerModelId.contains('sdxl')) {
+      return 'stability';
+    }
+
+    // Default to Google for unknown models
+    return 'google';
   }
 }
 

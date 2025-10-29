@@ -27,7 +27,7 @@ class _UnifiedProviderSettingsState
   @override
   void initState() {
     super.initState();
-    _modelSelectionService = ModelSelectionService();
+    _modelSelectionService = ModelSelectionService.instance;
     _initializeProviders();
     _fetchProviderModels();
     _checkConfiguredProviders();
@@ -209,6 +209,8 @@ class _UnifiedProviderSettingsState
                       DropdownMenuItem(
                           value: 'claude', child: Text('Anthropic Claude')),
                       DropdownMenuItem(
+                          value: 'zhipuai', child: Text('ZhipuAI GLM')),
+                      DropdownMenuItem(
                           value: 'azure-openai', child: Text('Azure OpenAI')),
                       DropdownMenuItem(value: 'cohere', child: Text('Cohere')),
                       DropdownMenuItem(
@@ -274,6 +276,16 @@ class _UnifiedProviderSettingsState
             icon: Icons.psychology,
             color: const Color(0xFFD4A373),
             strength: 9,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildDynamicProviderCard(
+            providerId: 'zhipuai',
+            title: 'ZhipuAI GLM',
+            icon: Icons.code,
+            color: const Color(0xFF1E88E5),
+            strength: 8,
           ),
 
           const SizedBox(height: 16),
@@ -358,7 +370,9 @@ class _UnifiedProviderSettingsState
                 ? 'Gemini Pro, Ultra, PaLM'
                 : providerId == 'claude'
                     ? 'Claude 3, Claude 2, Claude Instant'
-                    : providerId == 'azure-openai'
+                    : providerId == 'zhipuai'
+                        ? 'GLM-4, GLM-3, ChatGLM'
+                        : providerId == 'azure-openai'
                         ? 'GPT-4, GPT-3.5 Turbo on Azure'
                         : providerId == 'cohere'
                             ? 'Command, Command Light, Nightly'
@@ -391,7 +405,9 @@ class _UnifiedProviderSettingsState
                   ? ['gemini-pro', 'gemini-pro-vision', 'gemini-ultra']
                   : providerId == 'claude'
                       ? ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku']
-                      : providerId == 'azure-openai'
+                      : providerId == 'zhipuai'
+                          ? ['glm-4', 'glm-4-air', 'glm-4-flash']
+                          : providerId == 'azure-openai'
                           ? ['gpt-4', 'gpt-35-turbo']
                           : providerId == 'cohere'
                               ? ['command', 'command-light', 'command-nightly']
@@ -743,6 +759,13 @@ class ProviderSearchDelegate extends SearchDelegate<String> {
       'description': 'Claude 3, Claude 2, Claude Instant',
       'icon': Icons.psychology,
       'color': Color(0xFFD4A373),
+    },
+    {
+      'id': 'zhipuai',
+      'name': 'ZhipuAI GLM',
+      'description': 'GLM-4, GLM-3, ChatGLM',
+      'icon': Icons.code,
+      'color': Color(0xFF1E88E5),
     },
     {
       'id': 'azure-openai',

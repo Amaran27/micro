@@ -461,9 +461,9 @@ class _ApiConfigurationDialogState
       if (apiKey.isNotEmpty) {
         await SecureApiStorage.saveApiKey(widget.providerId, apiKey);
 
-        // Now fetch models
-        final modelService = ModelSelectionService();
-        await modelService.fetchAvailableModels();
+        // Now fetch models with force refresh to get new models for this provider
+        final modelService = ModelSelectionService.instance;
+        await modelService.fetchAvailableModels(forceRefresh: true);
 
         AppLogger()
             .info('Successfully fetched models for ${widget.providerId}');

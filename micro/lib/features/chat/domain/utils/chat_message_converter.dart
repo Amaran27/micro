@@ -9,10 +9,24 @@ micro.ChatMessage convertLangchainChatMessage(
 
   if (langchainMessage is langchain_core.HumanChatMessage) {
     messageType = MessageType.user;
-    if (langchainMessage.content is String) {
-      content = langchainMessage.content as String;
+    // Extract text from ChatMessageContent
+    final contentObj = langchainMessage.content;
+    if (contentObj is langchain_core.ChatMessageContentText) {
+      content = contentObj.text;
     } else {
-      content = langchainMessage.content.toString(); // Fallback to toString()
+      // Try to extract text from the content object
+      try {
+        content = contentObj.toString();
+        // If it's JSON-like, try to extract the text field
+        if (content.contains('"text":')) {
+          final textMatch = RegExp(r'"text":\s*"([^"]*)"').firstMatch(content);
+          if (textMatch != null) {
+            content = textMatch.group(1) ?? content;
+          }
+        }
+      } catch (e) {
+        content = 'Unable to extract message content';
+      }
     }
   } else if (langchainMessage is langchain_core.AIChatMessage) {
     messageType = MessageType.assistant;

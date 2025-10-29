@@ -6,11 +6,14 @@ import '../../core/utils/logger.dart';
 import '../../config/ai_provider_constants.dart';
 import 'secure_api_storage.dart';
 import 'model_selection_service.dart';
+import 'providers/anthropic_provider.dart';
+import 'providers/zhipuai_provider.dart';
+import 'model_selection_notifier.dart';
 
 /// Configuration for AI providers in the autonomous agent system
 class AIProviderConfig {
   final AppLogger _logger = AppLogger();
-  final ModelSelectionService _modelSelectionService = ModelSelectionService();
+  late final ModelSelectionService _modelSelectionService;
 
   // Provider configurations
   final Map<String, dynamic> _providerConfigs = {};
@@ -19,15 +22,18 @@ class AIProviderConfig {
   bool _isInitialized = false;
 
   /// Initialize AI providers with API keys from secure storage
-  Future<void> initialize() async {
+  Future<void> initialize({ModelSelectionService? modelSelectionService}) async {
     if (_isInitialized) return;
 
     try {
       _logger.info('Initializing AI Provider Configuration');
 
+      // Use provided service or create a singleton instance
+      _modelSelectionService = modelSelectionService ?? ModelSelectionService.instance;
+
       // Initialize ModelSelectionService first
       await _modelSelectionService.initialize();
-      await _modelSelectionService.fetchAvailableModels();
+      await _modelSelectionService.fetchAvailableModels(forceRefresh: false);
 
       // Load configurations from secure storage
       await _loadAllConfigurations();
@@ -138,13 +144,24 @@ class AIProviderConfig {
 
     // If no active model is set, use the first favorite model
     if (model.isEmpty) {
-      final favoriteModels = _modelSelectionService.getFavoriteModels(providerId);
+      final favoriteModels =
+          _modelSelectionService.getFavoriteModels(providerId);
       if (favoriteModels.isNotEmpty) {
         model = favoriteModels.first;
       } else {
-        // No available models - log error and return null
-        _logger.warning('No active or favorite models available for provider: $providerId');
-        return null;
+        // If no favorites, try to use available models (including cached ones)
+        final availableModels =
+            _modelSelectionService.getAvailableModels(providerId);
+        if (availableModels.isNotEmpty) {
+          model = availableModels.first;
+          AppLogger().info(
+              'Using first available model from cache: $model for provider: $providerId');
+        } else {
+          // No available models - log error and return null
+          _logger.warning(
+              'No active, favorite, or available models found for provider: $providerId');
+          return null;
+        }
       }
     }
 
@@ -173,7 +190,16 @@ class AIProviderConfig {
           ),
         );
 
-      // TODO: Add support for other providers
+      case 'claude':
+      case 'anthropic': // Support both names
+        final anthropicProvider = AnthropicProvider();
+        return await anthropicProvider.initialize();
+
+      case 'zhipuai':
+      case 'z_ai': // Support both names
+        final zhipuaiProvider = ZhipuAIProvider();
+        return await zhipuaiProvider.initialize();
+
       // For now, we'll return null for unsupported providers
       default:
         return null;
@@ -204,16 +230,6 @@ class AIProviderConfig {
   /// Get configuration for a specific provider
   Map<String, dynamic>? getProviderConfig(String providerId) {
     return _providerConfigs[providerId];
-  }
-
-  String? _getOpenAIApiKey() {
-    // Fallback to environment variable if secure storage fails
-    return const String.fromEnvironment('OPENAI_API_KEY');
-  }
-
-  String? _getGoogleApiKey() {
-    // Fallback to environment variable if secure storage fails
-    return const String.fromEnvironment('GOOGLE_AI_API_KEY');
   }
 }
 
