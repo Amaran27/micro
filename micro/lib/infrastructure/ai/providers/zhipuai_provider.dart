@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../../core/utils/logger.dart';
@@ -30,14 +29,6 @@ class ZhipuAIProvider {
       _logger.error('Failed to initialize ZhipuAI provider', error: e);
       return null;
     }
-  }
-
-  /// Create ZhipuAI chat model using OpenAI-compatible interface
-  /// TODO: Implement when langchain_openai is available in pubspec.yaml
-  dynamic _createZhipuAIChatModel(String apiKey) {
-    throw UnimplementedError(
-        'ZhipuAI chat model creation requires langchain_openai package. '
-        'Please add langchain_openai to pubspec.yaml dependencies.');
   }
 
   /// Get available ZhipuAI models
@@ -126,57 +117,6 @@ class ZhipuAIProvider {
       'glm-4.6-flash',
     };
     return validModels.contains(modelId);
-  }
-
-  /// Generate JWT token for ZhipuAI API authentication
-  Future<String?> _generateJWTToken(String apiKey) async {
-    try {
-      // ZhipuAI uses JWT for authentication
-      // The API key format can be: {id}.{secret} or just a regular API key
-      final parts = apiKey.split('.');
-      if (parts.length != 2) {
-        _logger.warning(
-            'ZhipuAI API key format may be incorrect, trying direct usage');
-        // Try using the API key directly instead of failing
-        return apiKey;
-      }
-
-      final id = parts[0];
-      // The secret would be used for proper JWT signing in production
-      final secret = parts[1];
-
-      // Create JWT payload
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final payload = {
-        'iat': now,
-        'exp': now + 3600, // 1 hour expiration
-        'iss': id,
-      };
-
-      // For simplicity, we'll use a basic approach
-      // In production, you should use a proper JWT library with the secret
-      // for proper HMAC-SHA256 signing
-      final header = {'alg': 'HS256', 'typ': 'JWT'};
-
-      // This is a simplified JWT generation
-      // In production, use crypto package for proper signing
-      final encodedHeader = base64Url.encode(utf8.encode(json.encode(header)));
-      final encodedPayload =
-          base64Url.encode(utf8.encode(json.encode(payload)));
-
-      // Note: This is a placeholder for actual JWT signing
-      // You would need to implement proper HMAC-SHA256 signing using:
-      // crypto.Hmac(sha256, utf8.encode(secret)).convert(payloadBytes)
-      final signature = 'placeholder_signature';
-
-      // Mark secret as used to avoid lint warnings
-      secret.length;
-
-      return '$encodedHeader.$encodedPayload.$signature';
-    } catch (e) {
-      _logger.error('Failed to generate JWT token', error: e);
-      return null;
-    }
   }
 
   /// Get default ZhipuAI models
@@ -419,13 +359,6 @@ class ZhipuAIProvider {
     }
 
     return zhipuaiMessages;
-  }
-
-  /// Validate ZhipuAI API key format
-  bool _isValidApiKey(String apiKey) {
-    // ZhipuAI API keys should be 49+ characters with a dot separator
-    // Format: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxx
-    return apiKey.length >= 49 && apiKey.contains('.');
   }
 }
 

@@ -5,8 +5,6 @@ import '../../../domain/models/ai_model.dart';
 
 class ModelCacheRepository {
   static const String tableName = 'cached_models';
-  static const String _cacheTimestampKey = 'cache_timestamp';
-  static const Duration _cacheExpiry = Duration(hours: 24);
 
   Database? _database;
 
