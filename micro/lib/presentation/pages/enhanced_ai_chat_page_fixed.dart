@@ -35,7 +35,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
       // Get the current model using the new provider
       final currentModelAsync = ref.read(currentSelectedModelProvider);
       // Wait for the AsyncValue to be ready and extract the value
-      final currentModel = await currentModelAsync.when(
+      final currentModel = currentModelAsync.when(
         data: (value) => value,
         loading: () => null,
         error: (_, __) => null,
@@ -418,7 +418,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                                   }
                                 },
                               );
-                            }).toList(),
+                            }),
                           ],
                         );
                       },

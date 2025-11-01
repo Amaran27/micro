@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 
-import '../../infrastructure/ai/comprehensive_llm_provider.dart';
+import '../../infrastructure/ai/llm_provider_interface.dart';
 
 /// Provider for dynamically fetching models from AI providers
 class DynamicModelFetcher {

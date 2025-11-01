@@ -41,7 +41,6 @@ class ContextAnalysis {
   }) {
     final allPermissions = requiredPermissions.toSet();
     final grantedSet = grantedPermissions.toSet();
-    final deniedSet = deniedPermissions.toSet();
 
     // Check if all required permissions are granted
     final missingPermissions = allPermissions.difference(grantedSet);

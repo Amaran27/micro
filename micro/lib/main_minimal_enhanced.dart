@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'infrastructure/ai/agent/agent_providers.dart';
 
 import '../providers/ai_providers.dart';
 
@@ -9,7 +10,7 @@ class MinimalEnhancedAIApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final llmProvider = ref.read(comprehensiveLLMProvider);
+    final llmProvider = ref.watch(comprehensiveLLMProvider);
     final TextEditingController messageController = TextEditingController();
     bool isLoading = false;
     String currentTask = 'chat';
@@ -22,7 +23,7 @@ class MinimalEnhancedAIApp extends ConsumerWidget {
         actions: [
           // Provider status
           Consumer(
-            builder: (context, ref) {
+            builder: (context, ref, child) {
               final status = llmProvider.getStatusSummary();
               return IconButton(
                 icon: Icon(
@@ -108,16 +109,20 @@ class MinimalEnhancedAIApp extends ConsumerWidget {
                           const SizedBox(width: 8),
                           DropdownButton<String>(
                             value: currentTask,
-                            items: const ['chat', 'coding', 'analysis', 'translation', 'creative'],
+                            items: const ['chat', 'coding', 'analysis', 'translation', 'creative']
+                                .map((task) => DropdownMenuItem<String>(
+                                      value: task,
+                                      child: Text(task),
+                                    ))
+                                .toList(),
                             onChanged: (task) {
-                              currentTask = task;
+                              currentTask = task ?? 'chat';
                             },
                           ),
                           const SizedBox(width: 8),
                           Text('Task: $currentTask'),
                         ],
                       ],
-                      ),
                       
                       const SizedBox(height: 8),
                       
@@ -232,4 +237,15 @@ class MinimalEnhancedAIApp extends ConsumerWidget {
       );
     }
   }
+}
+
+/// Main entry point for the enhanced AI app
+void main() {
+  runApp(
+    const ProviderScope(
+      child: MaterialApp(
+        home: MinimalEnhancedAIApp(),
+      ),
+    ),
+  );
 }

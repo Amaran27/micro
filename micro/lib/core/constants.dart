@@ -143,4 +143,7 @@ class RouteConstants {
   static const String workflowDetail = '/workflow/:id';
   static const String toolDetail = '/tool/:id';
   static const String audit = '/audit';
+  static const String agents = '/agents';
+  static const String agentDashboard = '/agents/dashboard';
+  static const String agentDetail = '/agents/:id';
 }

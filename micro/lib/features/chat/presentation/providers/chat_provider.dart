@@ -1,15 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:langchain/langchain.dart';
-import 'package:langchain_google/langchain_google.dart';
-import 'package:langchain_openai/langchain_openai.dart';
 import 'package:micro/features/chat/domain/usecases/send_message_usecase.dart';
 import 'package:micro/infrastructure/ai/ai_provider_config.dart';
+import 'package:micro/infrastructure/ai/interfaces/provider_adapter.dart';
+import 'package:micro/infrastructure/ai/interfaces/provider_config.dart' as pc;
+import 'package:micro/infrastructure/ai/adapters/zhipuai_adapter.dart';
+import 'package:micro/infrastructure/ai/adapters/chat_google_adapter.dart';
+import 'package:micro/infrastructure/ai/adapters/chat_openai_adapter.dart';
 import 'package:micro/features/chat/data/sources/llm_data_source.dart';
 import 'package:micro/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:micro/features/chat/domain/utils/chat_message_converter.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
 import 'package:micro/presentation/providers/ai_providers.dart';
+import 'package:micro/presentation/providers/provider_config_providers.dart';
+import 'package:micro/infrastructure/ai/provider_config_model.dart';
 
 class ChatState {
   final List<micro.ChatMessage> messages;
@@ -79,71 +84,196 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     try {
       // Get the current selected model
+      // Get the current selected model
       final currentModelIdAsync = _ref.read(currentSelectedModelProvider);
       // Wait for the AsyncValue to be ready and extract the value
-      final currentModelId = await currentModelIdAsync.when(
-        data: (value) => value,
-        loading: () => null,
-        error: (_, __) => null,
+      final currentModelId = currentModelIdAsync.when(
+        data: (value) {
+          print('DEBUG: currentSelectedModelProvider returned: $value');
+          return value;
+        },
+        loading: () {
+          print('DEBUG: currentSelectedModelProvider is loading');
+          return null;
+        },
+        error: (error, stack) {
+          print('DEBUG: currentSelectedModelProvider error: $error');
+          return null;
+        },
       );
 
-      BaseChatModel? chatModel;
+      print('DEBUG: Final currentModelId: $currentModelId');
+
+      ProviderAdapter? adapter;
+
+      // If no specific model is selected, try to get the active model for each provider
+      if (currentModelId == null) {
+        final activeModels = _aiProviderConfig.getAllActiveModels();
+        print('DEBUG: Active models: $activeModels');
+
+        // Check if ZhipuAI has an active model
+        final zhipuaiModel = activeModels['zhipu-ai'];
+        if (zhipuaiModel != null) {
+          adapter = _aiProviderConfig.getProvider('zhipu-ai');
+          print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
+        }
+      }
 
       if (currentModelId != null) {
         // Get the provider for the selected model
         String providerId = _detectProviderFromModel(currentModelId);
 
-        // Get the provider and create a new model with the selected model ID
-        final baseProvider = _aiProviderConfig.getProvider(providerId);
+        print(
+            'DEBUG: Current model ID: $currentModelId, detected provider: $providerId');
 
-        if (baseProvider is ChatGoogleGenerativeAI) {
-          // Create a new Google AI instance with the selected model
-          final config = _aiProviderConfig.getProviderConfig(providerId);
-          if (config != null) {
-            chatModel = ChatGoogleGenerativeAI(
-              apiKey: config['apiKey'],
-              defaultOptions: ChatGoogleGenerativeAIOptions(
-                model: currentModelId,
-                temperature: 0.7,
-                topP: 1.0,
-                topK: 40,
-              ),
-            );
+        // First try to get adapter from new provider system
+        try {
+          final configsAsync = _ref.read(providersConfigProvider);
+          final configs = await configsAsync.when(
+            data: (data) async => data,
+            loading: () async => [],
+            error: (e, s) async {
+              print('DEBUG: Error reading new configs: $e');
+              return [];
+            },
+          );
+
+          if (configs.isNotEmpty) {
+            try {
+              // Find config for this provider that has this model
+              ProviderConfig? matchingConfig;
+
+              // First try to find a config with the exact model as favorite
+              for (final c in configs) {
+                if (c.providerId == providerId &&
+                    c.isEnabled &&
+                    c.testPassed &&
+                    c.favoriteModels.contains(currentModelId)) {
+                  matchingConfig = c;
+                  break;
+                }
+              }
+
+              // If not found, try to find any enabled config for this provider
+              if (matchingConfig == null) {
+                for (final c in configs) {
+                  if (c.providerId == providerId && c.isEnabled) {
+                    matchingConfig = c;
+                    break;
+                  }
+                }
+              }
+
+              if (matchingConfig != null) {
+                print(
+                    'DEBUG: Found new provider config: ${matchingConfig.providerId}');
+
+                // Create adapter for this provider
+                adapter = await _createAdapterFromConfig(
+                    matchingConfig, currentModelId);
+                print(
+                    'DEBUG: Created adapter from new config: ${adapter?.providerId}');
+              } else {
+                print(
+                    'DEBUG: No matching config found for provider: $providerId');
+              }
+            } catch (e) {
+              print('DEBUG: Error finding config: $e');
+            }
           }
-        } else if (baseProvider is ChatOpenAI) {
-          // Create a new OpenAI instance with the selected model
-          final config = _aiProviderConfig.getProviderConfig(providerId);
-          if (config != null) {
-            chatModel = ChatOpenAI(
-              apiKey: config['apiKey'],
-              defaultOptions: ChatOpenAIOptions(
-                model: currentModelId,
-                maxTokens: 1000,
-                temperature: 0.7,
-                topP: 1.0,
-              ),
-            );
+        } catch (e) {
+          print('DEBUG: Error reading new provider configs: $e');
+        }
+
+        // Fallback to old system if new system didn't provide adapter
+        if (adapter == null) {
+          adapter = _aiProviderConfig.getProvider(providerId);
+          print(
+              'DEBUG: Fallback to old provider system adapter: ${adapter?.providerId}');
+        }
+
+        print(
+            'DEBUG: Final adapter: ${adapter?.providerId}, current model: ${adapter?.currentModel}');
+
+        // If we couldn't get an adapter or it doesn't have the right model, try direct provider lookup
+        if (adapter == null || adapter.currentModel != currentModelId) {
+          if (currentModelId.toLowerCase().startsWith('glm-')) {
+            adapter = _aiProviderConfig.getProvider('zhipu-ai');
+            print('DEBUG: Using direct ZhipuAI provider for GLM model');
+          } else if (currentModelId.toLowerCase().startsWith('gemini-')) {
+            adapter = _aiProviderConfig.getProvider('google');
+            print('DEBUG: Using direct Google provider for Gemini model');
           }
+        }
+
+        // Switch to the selected model if different from current
+        final currentAdapter = adapter;
+        if (currentAdapter != null &&
+            currentAdapter.currentModel != currentModelId) {
+          await currentAdapter.switchModel(currentModelId);
+          print('DEBUG: Switched adapter to model: $currentModelId');
         }
       }
 
-      // Fallback to any available model if we couldn't create a specific one
-      chatModel ??= _aiProviderConfig.getBestAvailableChatModel();
+      // Fallback to any available provider if we couldn't get a specific one
+      if (adapter == null) {
+        // If no specific model is selected, try to use the active ZhipuAI model
+        if (currentModelId == null) {
+          final activeModels = _aiProviderConfig.getAllActiveModels();
+          print('DEBUG: Active models when no currentModelId: $activeModels');
 
-      if (chatModel != null) {
-        final humanMessage = ChatMessage.human(ChatMessageContent.text(text));
-        final response = await chatModel.call([humanMessage]);
-        final aiResponse = convertLangchainChatMessage(response);
+          // Check if ZhipuAI has an active model
+          final zhipuaiModel = activeModels['zhipuai'];
+          if (zhipuaiModel != null) {
+            adapter = _aiProviderConfig.getProvider('zhipuai');
+            print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
+          } else {
+            // Try Google as fallback
+            final googleModel = activeModels['google'];
+            if (googleModel != null) {
+              adapter = _aiProviderConfig.getProvider('google');
+              print('DEBUG: Using active Google model: $googleModel');
+            }
+          }
+        }
+        // Otherwise try to get a provider based on the current model prefix
+        else if (currentModelId.toLowerCase().startsWith('glm-')) {
+          adapter = _aiProviderConfig.getProvider('zhipuai');
+          print(
+              'DEBUG: Fallback to ZhipuAI adapter for GLM model: $currentModelId');
+        } else if (currentModelId.toLowerCase().startsWith('gemini-')) {
+          adapter = _aiProviderConfig.getProvider('google');
+          print(
+              'DEBUG: Using Google adapter for Gemini model: $currentModelId');
+        } else {
+          // For any other model, try to detect the provider
+          final detectedProvider = _detectProviderFromModel(currentModelId);
+          adapter = _aiProviderConfig.getProvider(detectedProvider);
+          print(
+              'DEBUG: Using detected provider $detectedProvider for model: $currentModelId');
+        }
+      }
+
+      final finalAdapter = adapter;
+      if (finalAdapter != null && finalAdapter.isInitialized) {
+        print(
+            'DEBUG: Using adapter: ${finalAdapter.providerId} with model: ${finalAdapter.currentModel}');
+        // Use the adapter's sendMessage method
+        final aiResponse = await finalAdapter.sendMessage(
+          text: text,
+          history: state.messages,
+        );
+
         state = state.copyWith(
           messages: [...state.messages, aiResponse],
           isLoading: false,
         );
       } else {
-        // Fallback response if no AI model is available
+        // Fallback response if no AI adapter is available
         final aiResponse = micro.ChatMessage.assistant(
           id: DateTime.now().toIso8601String(),
           content:
-              'Sorry, no AI model is currently available. Please configure an AI provider in settings.',
+              'Sorry, no AI provider is currently available. Please configure an AI provider in settings.',
         );
 
         state = state.copyWith(
@@ -201,6 +331,57 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(messages: []);
   }
 
+  /// Create adapter from new ProviderConfig
+  Future<ProviderAdapter?> _createAdapterFromConfig(
+      dynamic config, String modelId) async {
+    try {
+      final providerId = config.providerId;
+      final apiKey = config.apiKey;
+
+      print('DEBUG: Creating adapter for $providerId with model $modelId');
+
+      ProviderAdapter? adapter;
+
+      switch (providerId) {
+        case 'zhipu-ai':
+          adapter = ZhipuAIAdapter();
+          final zhipuConfig = pc.ZhipuAIConfig(
+            model: modelId,
+            apiKey: apiKey,
+          );
+          await adapter.initialize(zhipuConfig);
+          break;
+        case 'google':
+          adapter = ChatGoogleAdapter();
+          final googleConfig = pc.GoogleConfig(
+            model: modelId,
+            apiKey: apiKey,
+          );
+          await adapter.initialize(googleConfig);
+          break;
+        case 'openai':
+          adapter = ChatOpenAIAdapter();
+          final openaiConfig = pc.OpenAIConfig(
+            model: modelId,
+            apiKey: apiKey,
+          );
+          await adapter.initialize(openaiConfig);
+          break;
+        default:
+          print(
+              'DEBUG: Provider $providerId not yet implemented for new system');
+          return null;
+      }
+
+      print(
+          'DEBUG: Successfully created and initialized adapter for $providerId');
+      return adapter;
+    } catch (e) {
+      print('DEBUG: Error creating adapter from config: $e');
+      return null;
+    }
+  }
+
   /// Detect provider from model ID
   String _detectProviderFromModel(String? modelId) {
     if (modelId == null) return 'google'; // Default fallback
@@ -226,6 +407,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
         lowerModelId.startsWith('palm-') ||
         lowerModelId.startsWith('bard-')) {
       return 'google';
+    }
+
+    // ZhipuAI models
+    if (lowerModelId.startsWith('glm-') ||
+        lowerModelId.startsWith('chatglm-')) {
+      return 'zhipu-ai';
     }
 
     // Cohere models

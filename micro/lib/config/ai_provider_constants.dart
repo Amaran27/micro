@@ -22,8 +22,8 @@ class AIProviderConstants {
     'google': 'https://generativelanguage.googleapis.com/v1beta',
     'anthropic': 'https://api.anthropic.com/v1',
     'claude': 'https://api.anthropic.com/v1', // Alternative endpoint
-    'zhipuai': 'https://open.bigmodel.cn/api/paas/v4',
-    'z_ai': 'https://open.bigmodel.cn/api/paas/v4', // Alternative endpoint
+    'zhipuai': 'https://api.z.ai/api/paas/v4',
+    'z_ai': 'https://api.z.ai/api/paas/v4', // Alternative endpoint
     'azure':
         'https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT',
     'cohere': 'https://api.cohere.com/v1',
@@ -33,19 +33,17 @@ class AIProviderConstants {
     'huggingface': 'https://api-inference.huggingface.co',
   };
 
-  // Models are now fetched dynamically from provider APIs
-  // Default fallback models for each provider
+  // Models are fetched dynamically from provider APIs
+  // Fallback models only used when API calls fail
   static const Map<String, List<String>> defaultModels = {
     'openai': ['gpt-4o', 'gpt-4o-mini'],
-    'google': ['gemini-2.5-flash', 'gemini-1.5-pro'],
-    'claude': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
-    'zhipuai': ['glm-4-flash', 'glm-4-air'],
-    'azure': ['gpt-4', 'gpt-35-turbo'],
+    'google': ['gemini-2.0-flash-exp', 'gemini-1.5-pro'],
+    'claude': ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+    'zhipuai': ['glm-4.5-flash', 'glm-4.6', 'glm-4.5', 'glm-4.5-air'],
+    'azure': ['gpt-4', 'gpt-4o'],
     'cohere': ['command-r-plus', 'command-r'],
     'mistral': ['mistral-large-latest', 'mistral-small-latest'],
-    'stability': ['stable-diffusion-xl-1024-v1-0'],
-    'ollama': ['llama3.1', 'mistral'],
-    'huggingface': ['gpt2', 'distilgpt2'],
+    'ollama': ['llama3.2', 'qwen2.5'],
   };
 
   // Default Configuration Options
@@ -114,7 +112,7 @@ class AIProviderConstants {
     'openai': 'https://platform.openai.com/api-keys',
     'google': 'https://aistudio.google.com/app/apikey',
     'claude': 'https://console.anthropic.com/',
-    'zhipuai': 'https://open.bigmodel.cn/usercenter/apikeys',
+    'zhipuai': 'https://z.ai/manage-apikey/apikey-list',
     'azure': 'https://portal.azure.com/',
     'cohere': 'https://cohere.com/api',
     'mistral': 'https://console.mistral.ai/',

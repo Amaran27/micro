@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
 import 'package:micro/features/chat/presentation/providers/chat_provider.dart';
 import 'package:micro/presentation/providers/app_providers.dart';
-import 'package:micro/presentation/providers/ai_providers.dart';
 import 'package:micro/infrastructure/ai/model_selection_notifier.dart';
+import 'package:micro/presentation/providers/provider_config_providers.dart';
 
 /// Enhanced AI Chat Page with Markdown Support
 ///
@@ -28,8 +28,13 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   late final ScrollController _scrollController;
   String _currentModel = 'Loading...'; // Default display name
   String? _currentModelId; // Default model ID - nullable now
-  // Tracks whether the loading dialog is currently visible so we can dismiss safely.
+  // Tracks whether\u00a0loading dialog is currently visible so we can dismiss safely.
   bool _loadingDialogVisible = false;
+
+  // Agent mode state
+  bool _agentMode = false;
+  bool _showAgentPanel = false;
+  final bool _autoDetectAgentCommands = true;
 
   @override
   void initState() {
@@ -78,25 +83,37 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
       // Get the current model using the new provider
       final currentModelAsync = ref.read(currentSelectedModelProvider);
       // Wait for the AsyncValue to be ready and extract the value
-      final currentModel = await currentModelAsync.when(
-        data: (value) => value,
-        loading: () => null,
-        error: (_, __) => null,
+      final currentModel = currentModelAsync.when(
+        data: (value) {
+          print('DEBUG: UI _loadInitialModel got model: $value');
+          return value;
+        },
+        loading: () {
+          print('DEBUG: UI _loadInitialModel loading');
+          return null;
+        },
+        error: (error, stack) {
+          print('DEBUG: UI _loadInitialModel error: $error');
+          return null;
+        },
       );
-      
+
       if (currentModel != null) {
+        print('DEBUG: UI setting current model to: $currentModel');
         setState(() {
           _currentModelId = currentModel;
           _currentModel = _formatModelName(currentModel);
         });
       } else {
         // No model selected yet, show a placeholder
+        print('DEBUG: UI no model selected, showing placeholder');
         setState(() {
           _currentModelId = null;
           _currentModel = 'Select a model';
         });
       }
     } catch (e) {
+      print('DEBUG: UI error loading model: $e');
       setState(() {
         _currentModelId = null;
         _currentModel = 'Error loading model';
@@ -136,6 +153,21 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   Future<void> _handleSendMessage(ChatMessage message) async {
     if (message.text.trim().isEmpty) return;
 
+    // Auto-detect agent commands
+    if (_autoDetectAgentCommands && _isAgentCommand(message.text)) {
+      // Enable agent mode if not already enabled
+      if (!_agentMode) {
+        setState(() {
+          _agentMode = true;
+          _showAgentPanel = true;
+        });
+      }
+
+      // Handle agent command (will be expanded later)
+      await _handleAgentCommand(message.text);
+      return;
+    }
+
     // Add user message to our provider
     final chatNotifier = ref.read(chatProvider.notifier);
     await chatNotifier.sendMessage(message.text);
@@ -143,18 +175,74 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     // The AI response will be handled by the listener below
   }
 
+  /// Check if message is an agent command
+  bool _isAgentCommand(String text) {
+    return text.trim().startsWith('/agent') ||
+        text.trim().startsWith('/create') ||
+        text.trim().startsWith('/execute') ||
+        text.trim().startsWith('/status');
+  }
+
+  /// Handle agent command
+  Future<void> _handleAgentCommand(String command) async {
+    final commandText = command.trim();
+
+    // Add command as user message
+    final chatMessage = ChatMessage(
+      text: commandText,
+      user: const ChatUser(id: 'user', firstName: 'You'),
+      createdAt: DateTime.now(),
+    );
+    _messagesController.addMessage(chatMessage);
+
+    // Show response message
+    final responseMessage = ChatMessage(
+      text: _getAgentCommandResponse(commandText),
+      user: const ChatUser(id: 'ai', firstName: 'AI Agent'),
+      createdAt: DateTime.now(),
+    );
+    _messagesController.addMessage(responseMessage);
+  }
+
+  /// Get response for agent command
+  String _getAgentCommandResponse(String command) {
+    if (command.startsWith('/agent create')) {
+      return 'Agent creation is not yet implemented. Use the agent panel to create agents.';
+    } else if (command.startsWith('/agent list')) {
+      return 'No agents created yet. Use the agent panel to create your first agent.';
+    } else if (command.startsWith('/agent execute')) {
+      return 'Agent execution is not yet implemented. Create an agent first.';
+    } else if (command.startsWith('/agent status')) {
+      return 'Agent status monitoring is not yet implemented.';
+    } else {
+      return 'Unknown agent command. Available commands: /agent create, /agent list, /agent execute, /agent status';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(chatProvider);
 
     // Update current model when provider changes
-    ref.listen<AsyncValue<String?>>(currentSelectedModelProvider, (previous, next) {
+    ref.listen<AsyncValue<String?>>(currentSelectedModelProvider,
+        (previous, next) {
       final nextValue = next.when(
-        data: (value) => value,
-        loading: () => null,
-        error: (_, __) => null,
+        data: (value) {
+          print('DEBUG: UI currentSelectedModelProvider update: $value');
+          return value;
+        },
+        loading: () {
+          print('DEBUG: UI currentSelectedModelProvider loading');
+          return null;
+        },
+        error: (error, stack) {
+          print('DEBUG: UI currentSelectedModelProvider error: $error');
+          return null;
+        },
       );
       if (nextValue != null && nextValue != _currentModelId) {
+        print(
+            'DEBUG: UI updating current model from $_currentModelId to $nextValue');
         setState(() {
           _currentModelId = nextValue;
           _currentModel = _formatModelName(nextValue);
@@ -219,9 +307,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                       decoration: BoxDecoration(
                         color: _currentModelId != null
                             ? Theme.of(context).colorScheme.primaryContainer
-                            : Theme.of(context)
-                                .colorScheme
-                                .errorContainer,
+                            : Theme.of(context).colorScheme.errorContainer,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
@@ -272,6 +358,44 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Agent mode toggle
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _agentMode
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Agent',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: _agentMode
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        Switch(
+                          value: _agentMode,
+                          onChanged: (value) {
+                            setState(() {
+                              _agentMode = value;
+                              _showAgentPanel = value;
+                            });
+                          },
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   IconButton(
                     icon: const Icon(Icons.more_vert),
                     onPressed: () {
@@ -281,6 +405,70 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 ],
               ),
             ),
+
+            // Collapsible Agent Panel (only shown when agent mode is active)
+            if (_agentMode && _showAgentPanel)
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).dividerColor,
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    // Panel header
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.smart_toy,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Agent Panel',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: Icon(
+                              _showAgentPanel
+                                  ? Icons.keyboard_arrow_up
+                                  : Icons.keyboard_arrow_down,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _showAgentPanel = !_showAgentPanel;
+                              });
+                            },
+                            style: IconButton.styleFrom(
+                              minimumSize: const Size(24, 24),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Panel content
+                    Expanded(
+                      child: _buildAgentPanelContent(),
+                    ),
+                  ],
+                ),
+              ),
 
             // Chat widget
             Expanded(
@@ -313,7 +501,9 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                   textInputAction: TextInputAction.newline,
                   sendOnEnter: true,
                   decoration: InputDecoration(
-                    hintText: 'Type your message...',
+                    hintText: _agentMode
+                        ? 'Type message or /agent command...'
+                        : 'Type your message...',
                     hintStyle: TextStyle(
                       color: Colors.grey[500],
                     ),
@@ -368,16 +558,24 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
                 // Example questions
                 exampleQuestions: [
-                  ExampleQuestion(question: 'What can you help me with?'),
-                  ExampleQuestion(
-                      question: 'Explain a complex concept in simple terms'),
-                  ExampleQuestion(question: 'Help me solve a problem'),
+                  if (!_agentMode) ...[
+                    ExampleQuestion(question: 'What can you help me with?'),
+                    ExampleQuestion(
+                        question: 'Explain a complex concept in simple terms'),
+                    ExampleQuestion(question: 'Help me solve a problem'),
+                  ],
+                  if (_agentMode) ...[
+                    ExampleQuestion(
+                        question: '/agent create research_assistant'),
+                    ExampleQuestion(question: '/agent status'),
+                    ExampleQuestion(question: 'Execute analysis on my data'),
+                  ],
                   ExampleQuestion(question: 'Write some code for me'),
                 ],
 
                 // Welcome message
                 welcomeMessageConfig: WelcomeMessageConfig(
-                  title: 'AI Assistant',
+                  title: _agentMode ? 'AI Agent Mode' : 'AI Assistant',
                 ),
 
                 // Scroll behavior
@@ -452,8 +650,141 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
       applicationVersion: '1.0.0',
       applicationIcon: const Icon(Icons.smart_toy, size: 48),
       children: [
-        const Text('An AI-powered assistant that helps you with various tasks using multiple AI models.'),
+        const Text(
+            'An AI-powered assistant that helps you with various tasks using multiple AI models.'),
       ],
+    );
+  }
+
+  /// Build agent panel content
+  Widget _buildAgentPanelContent() {
+    return Consumer(
+      builder: (context, ref, child) {
+        return TabBarView(
+          children: [
+            // Agent creation and management
+            _buildAgentCreationTab(ref),
+            // Agent execution
+            _buildAgentExecutionTab(ref),
+            // Agent memory
+            _buildAgentMemoryTab(ref),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Build agent creation and management tab
+  Widget _buildAgentCreationTab(WidgetRef ref) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          'Create Agent',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Configure an autonomous agent to help you with tasks',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: () => _showAgentCreationDialog(context),
+          icon: const Icon(Icons.add),
+          label: const Text('Create New Agent'),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 48),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 16),
+        Text(
+          'Quick Agent Commands',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _buildCommandChip('/agent create'),
+            _buildCommandChip('/agent list'),
+            _buildCommandChip('/agent execute'),
+            _buildCommandChip('/agent status'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Build agent execution tab
+  Widget _buildAgentExecutionTab(WidgetRef ref) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.play_circle_outline, size: 48, color: Colors.grey),
+          SizedBox(height: 16),
+          Text('Agent Execution'),
+          Text(
+            'Monitor and control running agents',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build agent memory tab
+  Widget _buildAgentMemoryTab(WidgetRef ref) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.memory_outlined, size: 48, color: Colors.grey),
+          SizedBox(height: 16),
+          Text('Agent Memory'),
+          Text(
+            'View and manage agent memories',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build command chip
+  Widget _buildCommandChip(String command) {
+    return ActionChip(
+      avatar: const Icon(Icons.code, size: 16),
+      label: Text(command),
+      onPressed: () {
+        // Insert command into input field
+        // This will be implemented when we integrate with the chat input
+      },
+    );
+  }
+
+  /// Show agent creation dialog
+  void _showAgentCreationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create Agent'),
+        content: const Text('Agent creation dialog will be implemented here.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -489,6 +820,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
         return 'Google AI';
       case 'openai':
         return 'OpenAI';
+      case 'zhipu-ai':
       case 'zhipuai':
       case 'z_ai':
         return 'ZhipuAI GLM';
@@ -506,28 +838,41 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   }
 
   void _showModelSelection(BuildContext context) {
-    final favoriteModelsAsync = ref.read(favoriteModelsProvider);
+    // Watch the new reactive provider for favorite models by provider
+    final enabledConfigsAsync = ref.read(enabledProviderConfigsProvider);
 
-    // If the provider is currently loading, show a loading dialog and await
-    // the provider's future. Once it resolves, dismiss the dialog and
-    // present the sheet or the 'go to settings' message.
-    if (favoriteModelsAsync.isLoading) {
+    // If the provider is currently loading, show a loading dialog
+    if (enabledConfigsAsync.isLoading) {
       _showLoadingDialog(context);
 
-      // Await the provider's future and then act accordingly
-      ref.read(favoriteModelsProvider.future).then((favoriteModels) {
-        // Dismiss loading dialog
+      ref.read(enabledProviderConfigsProvider.future).then((configs) {
         _dismissLoadingDialog(context);
 
-        if (favoriteModels.isEmpty ||
-            favoriteModels.values.every((models) => models.isEmpty)) {
-          // No favorite models available, show a message
+        // Get model selection service to fetch available models
+        final modelService = ref.read(modelSelectionServiceProvider);
+
+        // Build a map of provider -> models (prefer favorites when present)
+        final allModels = <String, List<String>>{};
+        for (final config in configs) {
+          final availableModels =
+              modelService.getAvailableModels(config.providerId);
+          final favorites = config.favoriteModels;
+          // Show only selected favorites when present, otherwise show available
+          final models = favorites.isNotEmpty ? favorites : availableModels;
+
+          if (models.isNotEmpty) {
+            allModels[config.providerId] = models;
+          }
+        }
+
+        if (allModels.isEmpty ||
+            allModels.values.every((models) => models.isEmpty)) {
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
-              title: const Text('No Favorite Models'),
+              title: const Text('No Models Available'),
               content: const Text(
-                'You haven\'t selected any favorite models yet. Please go to Settings to configure AI providers and select your favorite models.',
+                'No AI models are available. Please go to Settings to configure AI providers.',
               ),
               actions: [
                 TextButton(
@@ -537,7 +882,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    // Navigate to settings
                     GoRouter.of(context).go('/settings');
                   },
                   child: const Text('Go to Settings'),
@@ -548,7 +892,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
           return;
         }
 
-        _presentFavoriteModelsSheet(context, favoriteModels);
+        _presentFavoriteModelsSheet(context, allModels);
       }).catchError((e) {
         _dismissLoadingDialog(context);
         showDialog(
@@ -569,17 +913,33 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
       return;
     }
 
-    favoriteModelsAsync.when(
-      data: (favoriteModels) {
-        if (favoriteModels.isEmpty ||
-            favoriteModels.values.every((models) => models.isEmpty)) {
-          // No favorite models available, show a message
+    enabledConfigsAsync.when(
+      data: (configs) {
+        // Get model selection service to fetch available models
+        final modelService = ref.read(modelSelectionServiceProvider);
+
+        // Build a map of provider -> models (prefer favorites when present)
+        final allModels = <String, List<String>>{};
+        for (final config in configs) {
+          final availableModels =
+              modelService.getAvailableModels(config.providerId);
+          final favorites = config.favoriteModels;
+          // Show only selected favorites when present, otherwise show available
+          final models = favorites.isNotEmpty ? favorites : availableModels;
+
+          if (models.isNotEmpty) {
+            allModels[config.providerId] = models;
+          }
+        }
+
+        if (allModels.isEmpty ||
+            allModels.values.every((models) => models.isEmpty)) {
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
-              title: const Text('No Favorite Models'),
+              title: const Text('No Models Available'),
               content: const Text(
-                'You haven\'t selected any favorite models yet. Please go to Settings to configure AI providers and select your favorite models.',
+                'No AI models are available. Please go to Settings to configure AI providers.',
               ),
               actions: [
                 TextButton(
@@ -589,7 +949,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    // Navigate to settings
                     GoRouter.of(context).go('/settings');
                   },
                   child: const Text('Go to Settings'),
@@ -600,14 +959,12 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
           return;
         }
 
-        _presentFavoriteModelsSheet(context, favoriteModels);
+        _presentFavoriteModelsSheet(context, allModels);
       },
       loading: () {
-        // Show loading indicator using the dialog helpers above.
         _showLoadingDialog(context);
       },
       error: (error, stackTrace) {
-        // Show error message
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -625,9 +982,10 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     );
   }
 
-  void _presentFavoriteModelsSheet(BuildContext context, Map<String, List<String>> favoriteModels) {
+  void _presentFavoriteModelsSheet(
+      BuildContext parentContext, Map<String, List<String>> favoriteModels) {
     showModalBottomSheet<void>(
-      context: context,
+      context: parentContext,
       builder: (BuildContext context) {
         return SafeArea(
           child: SizedBox(
@@ -682,7 +1040,8 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                               title: Text(model,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w500)),
-                              subtitle: Text(_getProviderDisplayName(providerId)),
+                              subtitle:
+                                  Text(_getProviderDisplayName(providerId)),
                               leading: Icon(
                                 isSelected
                                     ? Icons.radio_button_checked
@@ -691,8 +1050,10 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                                     ? Theme.of(context).primaryColor
                                     : null,
                               ),
-                              trailing: isSelected ? const Icon(Icons.check) : null,
+                              trailing:
+                                  isSelected ? const Icon(Icons.check) : null,
                               onTap: () async {
+                                // Close the sheet using its own context
                                 Navigator.pop(context);
 
                                 // Update the active model in ModelSelectionService
@@ -713,16 +1074,24 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                                     _currentModel = _formatModelName(model);
                                   });
 
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Switched to $model')),
-                                  );
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(parentContext)
+                                        .showSnackBar(
+                                      SnackBar(
+                                          content: Text('Switched to $model')),
+                                    );
+                                  }
                                 } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Failed to switch model: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(parentContext)
+                                        .showSnackBar(
+                                      SnackBar(
+                                        content:
+                                            Text('Failed to switch model: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                             );

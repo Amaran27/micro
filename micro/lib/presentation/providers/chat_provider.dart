@@ -122,7 +122,7 @@ class ChatProvider extends Notifier<ChatState> {
         final baseProvider = aiProviderConfig.getProvider(providerId);
         lc.BaseChatModel? chatModel;
 
-        if (baseProvider is ChatGoogleGenerativeAI && currentModelId != null) {
+        if (baseProvider is ChatGoogleGenerativeAI) {
           // Create a new Google AI instance with the selected model
           final config = aiProviderConfig.getProviderConfig(providerId);
           if (config != null) {
@@ -136,7 +136,7 @@ class ChatProvider extends Notifier<ChatState> {
               ),
             );
           }
-        } else if (baseProvider is ChatOpenAI && currentModelId != null) {
+        } else if (baseProvider is ChatOpenAI) {
           // Create a new OpenAI instance with the selected model
           final config = aiProviderConfig.getProviderConfig(providerId);
           if (config != null) {

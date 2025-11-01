@@ -1,14 +1,14 @@
-import 'package:langchain/langchain.dart';
-import 'package:langchain_openai/langchain_openai.dart';
-import 'package:langchain_google/langchain_google.dart';
-
 import '../../core/utils/logger.dart';
 import '../../config/ai_provider_constants.dart';
 import 'secure_api_storage.dart';
 import 'model_selection_service.dart';
-import 'providers/anthropic_provider.dart';
-import 'providers/zhipuai_provider.dart';
-import 'model_selection_notifier.dart';
+import 'interfaces/provider_adapter.dart';
+import 'interfaces/provider_config.dart';
+import 'adapters/chat_openai_adapter.dart';
+import 'adapters/chat_google_adapter.dart';
+import 'adapters/zhipuai_adapter.dart';
+import 'provider_storage_service.dart' as new_store;
+import 'provider_config_model.dart' as model_cfg;
 
 /// Configuration for AI providers in the autonomous agent system
 class AIProviderConfig {
@@ -17,19 +17,21 @@ class AIProviderConfig {
 
   // Provider configurations
   final Map<String, dynamic> _providerConfigs = {};
-  final Map<String, BaseChatModel> _activeProviders = {};
+  final Map<String, ProviderAdapter> _activeProviders = {};
 
   bool _isInitialized = false;
 
   /// Initialize AI providers with API keys from secure storage
-  Future<void> initialize({ModelSelectionService? modelSelectionService}) async {
+  Future<void> initialize(
+      {ModelSelectionService? modelSelectionService}) async {
     if (_isInitialized) return;
 
     try {
       _logger.info('Initializing AI Provider Configuration');
 
       // Use provided service or create a singleton instance
-      _modelSelectionService = modelSelectionService ?? ModelSelectionService.instance;
+      _modelSelectionService =
+          modelSelectionService ?? ModelSelectionService.instance;
 
       // Initialize ModelSelectionService first
       await _modelSelectionService.initialize();
@@ -49,8 +51,8 @@ class AIProviderConfig {
     }
   }
 
-  /// Get the best available chat model
-  BaseChatModel? getBestAvailableChatModel() {
+  /// Get the best available chat provider
+  ProviderAdapter? getBestAvailableChatModel() {
     // Prefer OpenAI GPT-4 for better reasoning
     if (_activeProviders.containsKey('openai')) {
       return _activeProviders['openai'];
@@ -61,9 +63,9 @@ class AIProviderConfig {
       return _activeProviders['google'];
     }
 
-    // Try Claude next
-    if (_activeProviders.containsKey('claude')) {
-      return _activeProviders['claude'];
+    // Try ZhipuAI next
+    if (_activeProviders.containsKey('zhipuai')) {
+      return _activeProviders['zhipuai'];
     }
 
     // Return any available provider
@@ -95,21 +97,44 @@ class AIProviderConfig {
   Future<void> _loadAllConfigurations() async {
     _providerConfigs.clear();
 
-    // Load configurations for all providers
+    // 1) Load configurations from new ProviderStorageService (secure)
+    try {
+      final store = new_store.ProviderStorageService();
+      final List<model_cfg.ProviderConfig> enabledConfigs =
+          await store.getEnabledConfigs();
+      for (final cfg in enabledConfigs) {
+        final pid = _canonicalProviderId(cfg.providerId);
+        // Prefer new store; do not overwrite if already set
+        _providerConfigs.putIfAbsent(
+            pid,
+            () => {
+                  'apiKey': cfg.apiKey,
+                  'configId': cfg.id,
+                });
+        _logger.info('Loaded configuration for $pid from new store');
+      }
+    } catch (e) {
+      _logger.warning('Failed to load configurations from new store', error: e);
+    }
+
+    // 2) Backward-compat: Load from legacy SecureApiStorage if not present
     for (final providerId in AIProviderConstants.providerNames.keys) {
       try {
+        final pid = _canonicalProviderId(providerId);
+        if (_providerConfigs.containsKey(pid)) continue;
+
         final apiKey = await SecureApiStorage.getApiKey(providerId);
         final config = await SecureApiStorage.getConfiguration(providerId);
 
         if (apiKey != null && apiKey.isNotEmpty) {
-          _providerConfigs[providerId] = {
+          _providerConfigs[pid] = {
             'apiKey': apiKey,
             ...?config,
           };
-          _logger.info('Loaded configuration for $providerId');
+          _logger.info('Loaded legacy configuration for $pid');
         }
       } catch (e) {
-        _logger.warning('Failed to load configuration for $providerId',
+        _logger.warning('Failed to load legacy configuration for $providerId',
             error: e);
       }
     }
@@ -133,25 +158,25 @@ class AIProviderConfig {
     }
   }
 
-  Future<BaseChatModel?> _initializeProvider(
+  Future<ProviderAdapter?> _initializeProvider(
       String providerId, Map<String, dynamic> config) async {
+    final canonicalId = _canonicalProviderId(providerId);
     final apiKey = config['apiKey'] as String;
-    final defaultOptions = AIProviderConstants.defaultOptions[providerId] ?? {};
 
-    // Always use the active model from ModelSelectionService
+    // Always use the active model from ModelSelectionService (canonical id)
     final activeModels = _modelSelectionService.getAllActiveModels();
-    String model = activeModels[providerId] ?? '';
+    String model = activeModels[canonicalId] ?? '';
 
     // If no active model is set, use the first favorite model
     if (model.isEmpty) {
       final favoriteModels =
-          _modelSelectionService.getFavoriteModels(providerId);
+          _modelSelectionService.getFavoriteModels(canonicalId);
       if (favoriteModels.isNotEmpty) {
         model = favoriteModels.first;
       } else {
         // If no favorites, try to use available models (including cached ones)
         final availableModels =
-            _modelSelectionService.getAvailableModels(providerId);
+            _modelSelectionService.getAvailableModels(canonicalId);
         if (availableModels.isNotEmpty) {
           model = availableModels.first;
           AppLogger().info(
@@ -165,40 +190,48 @@ class AIProviderConfig {
       }
     }
 
-    _logger.info('Using model: $model for provider: $providerId');
+    _logger.info('Using model: $model for provider: $canonicalId');
 
-    switch (providerId) {
+    switch (canonicalId) {
       case 'openai':
-        return ChatOpenAI(
+        final adapter = ChatOpenAIAdapter();
+        final openaiConfig = OpenAIConfig(
+          model: model,
           apiKey: apiKey,
-          defaultOptions: ChatOpenAIOptions(
-            model: model,
-            maxTokens: defaultOptions['maxTokens'] ?? 1000,
-            temperature: defaultOptions['temperature'] ?? 0.7,
-            topP: defaultOptions['topP'] ?? 1.0,
-          ),
         );
+        await adapter.initialize(openaiConfig);
+        _activeProviders[canonicalId] = adapter;
+        return adapter;
 
       case 'google':
-        return ChatGoogleGenerativeAI(
+        final adapter = ChatGoogleAdapter();
+        final googleConfig = GoogleConfig(
+          model: model,
           apiKey: apiKey,
-          defaultOptions: ChatGoogleGenerativeAIOptions(
-            model: model,
-            temperature: defaultOptions['temperature'] ?? 0.7,
-            topP: defaultOptions['topP'] ?? 1.0,
-            topK: defaultOptions['topK'] ?? 40,
-          ),
         );
+        await adapter.initialize(googleConfig);
+        _activeProviders[canonicalId] = adapter;
+        return adapter;
 
       case 'claude':
       case 'anthropic': // Support both names
-        final anthropicProvider = AnthropicProvider();
-        return await anthropicProvider.initialize();
+        // For now, we don't have an AnthropicAdapter implemented
+        // TODO: Implement AnthropicAdapter similar to other providers
+        _logger.warning(
+            'Anthropic provider not yet implemented with adapter pattern');
+        return null;
 
+      case 'zhipu-ai':
       case 'zhipuai':
-      case 'z_ai': // Support both names
-        final zhipuaiProvider = ZhipuAIProvider();
-        return await zhipuaiProvider.initialize();
+      case 'z_ai': // Support all aliases
+        final adapter = ZhipuAIAdapter();
+        final zhipuConfig = ZhipuAIConfig(
+          model: model,
+          apiKey: apiKey,
+        );
+        await adapter.initialize(zhipuConfig);
+        _activeProviders['zhipu-ai'] = adapter;
+        return adapter;
 
       // For now, we'll return null for unsupported providers
       default:
@@ -208,12 +241,12 @@ class AIProviderConfig {
 
   /// Check if a specific provider is configured and available
   bool isProviderAvailable(String providerId) {
-    return _activeProviders.containsKey(providerId);
+    return _activeProviders.containsKey(_canonicalProviderId(providerId));
   }
 
   /// Get a specific provider by ID
-  BaseChatModel? getProvider(String providerId) {
-    return _activeProviders[providerId];
+  ProviderAdapter? getProvider(String providerId) {
+    return _activeProviders[_canonicalProviderId(providerId)];
   }
 
   /// Refresh provider configurations
@@ -229,36 +262,22 @@ class AIProviderConfig {
 
   /// Get configuration for a specific provider
   Map<String, dynamic>? getProviderConfig(String providerId) {
-    return _providerConfigs[providerId];
+    return _providerConfigs[_canonicalProviderId(providerId)];
   }
-}
 
-/// Configuration class for OpenAI
-class OpenAIConfig {
-  final String apiKey;
-  final String defaultModel;
-  final int maxTokens;
-  final double temperature;
+  /// Get all active models from ModelSelectionService
+  Map<String, String> getAllActiveModels() {
+    return _modelSelectionService.getAllActiveModels();
+  }
 
-  OpenAIConfig({
-    required this.apiKey,
-    String? defaultModel, // Model will be fetched dynamically
-    this.maxTokens = 1000,
-    this.temperature = 0.7,
-  }) : defaultModel = defaultModel ?? 'gpt-4o-mini'; // Fallback model
-}
-
-/// Configuration class for Google AI
-class GoogleGenerativeAIConfig {
-  final String apiKey;
-  final String defaultModel;
-  final int maxTokens;
-  final double temperature;
-
-  GoogleGenerativeAIConfig({
-    required this.apiKey,
-    String? defaultModel, // Model will be fetched dynamically
-    this.maxTokens = 1000,
-    this.temperature = 0.7,
-  }) : defaultModel = defaultModel ?? 'gemini-2.5-flash'; // Fallback model
+  String _canonicalProviderId(String providerId) {
+    switch (providerId) {
+      case 'zhipu-ai':
+      case 'zhipuai':
+      case 'z_ai':
+        return 'zhipu-ai';
+      default:
+        return providerId;
+    }
+  }
 }

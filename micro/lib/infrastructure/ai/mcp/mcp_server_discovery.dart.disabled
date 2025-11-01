@@ -1,0 +1,339 @@
+import 'dart:io';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'mcp_client_adapter.dart';
+
+/// Service for discovering and managing MCP servers
+class MCPServerDiscovery {
+  static const _tag = 'MCPServerDiscovery';
+  
+  /// Config file for MCP servers
+  static const String _configFileName = 'mcp_servers.json';
+  static const String _configDirectoryName = 'mcp';
+  
+  /// Discovered servers
+  final List<MCPServerConfig> _servers = [];
+  
+  /// Initialize server discovery
+  Future<void> initialize() async {
+    await _loadConfigFile();
+    await _discoverLocalServers();
+  }
+  
+  /// Load server configuration from file
+  Future<void> _loadConfigFile() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final configDir = Directory(path.join(appDir.path, _configDirectoryName));
+      
+      if (!await configDir.exists()) {
+        await configDir.create(recursive: true);
+      }
+      
+      final configFile = File(path.join(configDir.path, _configFileName));
+      
+      if (await configFile.exists()) {
+        final content = await configFile.readAsString();
+        final List<dynamic> jsonList = content.isEmpty
+            ? []
+            : content;
+            
+        _servers = jsonList.map((json) => MCPServerConfig(
+          id: json['id'] ?? 'server_${DateTime.now().millisecondsSinceEpoch}',
+          name: json['name'] ?? 'Unnamed Server',
+          transportType: _parseTransportType(json['transportType'] ?? 'stdio'),
+          url: json['url'] ?? '',
+          command: json['command'],
+          args: List<String>.from(json['args'] ?? []),
+          workingDirectory: json['workingDirectory'],
+          headers: Map<String, String>.from(json['headers'] ?? {}),
+          autoConnect: json['autoConnect'] ?? true,
+        )).toList();
+        
+        print('$_tag: Loaded ${_servers.length} servers from config');
+      }
+    } catch (e) {
+      print('$_tag: Failed to load config: $e');
+    }
+  }
+  
+  /// Save server configuration to file
+  Future<void> _saveConfigFile() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final configDir = Directory(path.join(appDir.path, _configDirectoryName));
+      final configFile = File(path.join(configDir.path, _configFileName));
+      
+      final jsonList = _servers.map((server) => {
+        'id': server.id,
+        'name': server.name,
+        'transportType': server.transportType.name,
+        'url': server.url,
+        'command': server.command,
+        'args': server.args,
+        'workingDirectory': server.workingDirectory,
+        'headers': server.headers,
+        'autoConnect': server.autoConnect,
+      }).toList();
+      
+      await configFile.writeAsString(jsonList);
+      print('$_tag: Saved ${_servers.length} servers to config');
+    } catch (e) {
+      print('$_tag: Failed to save config: $e');
+    }
+  }
+  
+  /// Discover local MCP servers
+  Future<void> _discoverLocalServers() async {
+    // Common MCP server paths
+    final searchPaths = [
+      if (Platform.isWindows) [
+        r'C:\Program Files\MCP Servers',
+        r'C:\Users\${Platform.environment['USERNAME']}AppDataLocalProgramsMCP Servers',
+      ],
+      if (Platform.isMacOS) [
+        '/Applications',
+        '/usr/local/bin',
+        '~/Applications',
+      ],
+      if (Platform.isLinux) [
+        '/usr/local/bin',
+        '/opt/mcp',
+        '~/.local/bin',
+      ],
+      if (Platform.isAndroid) [
+        '/data/local/tmp',
+        '/sdcard/Download',
+      ],
+    ].expand((paths) => paths).toList();
+    
+    // Look for common MCP server executables
+    final serverPatterns = [
+      'mcp-server-*',
+      '*-mcp',
+      'mcp_*',
+      'claude-mcp',
+      'openai-mcp',
+    ];
+    
+    for (final searchPath in searchPaths) {
+      try {
+        final directory = Directory(searchPath);
+        if (await directory.exists()) {
+          final entities = await directory.list().toList();
+          
+          for (final entity in entities) {
+            if (entity is File) {
+              final fileName = path.basename(entity.path);
+              
+              for (final pattern in serverPatterns) {
+                if (fileName.contains(pattern.replaceAll('*', ''))) {
+                  // Check if it's executable
+                  if (_isExecutable(entity)) {
+                    final server = MCPServerConfig(
+                      id: 'discovered_${fileName}_${DateTime.now().millisecondsSinceEpoch}',
+                      name: 'Discovered: $fileName',
+                      transportType: MCPTransportType.stdio,
+                      url: '',
+                      command: entity.path,
+                      args: [],
+                      autoConnect: false,
+                    );
+                    
+                    if (!_servers.any((s) => s.id == server.id)) {
+                      _servers.add(server);
+                      print('$_tag: Discovered server: $fileName');
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        print('$_tag: Error searching $searchPath: $e');
+      }
+    }
+    
+    // Check for common MCP server services
+    await _checkForMcpServices();
+  }
+  
+  /// Check if file is executable
+  bool _isExecutable(File file) {
+    final extension = path.extension(file.path).toLowerCase();
+    
+    if (Platform.isWindows) {
+      return ['.exe', '.bat', '.cmd', '.ps1'].contains(extension);
+    } else {
+      // On Unix-like systems, check if file has execute permissions
+      try {
+        final stat = file.statSync();
+        return (stat.mode & 0o111) != 0;
+      } catch (e) {
+        return false;
+      }
+    }
+  }
+  
+  /// Check for MCP services/daemons
+  Future<void> _checkForMcpServices() async {
+    // Check for Node.js MCP servers
+    try {
+      final result = await Process.run('npm', ['list', '--global', '--depth=0']);
+      if (result.exitCode == 0) {
+        final lines = result.stdout.toString().split('\n');
+        for (final line in lines) {
+          if (line.contains('mcp-')) {
+            final parts = line.split('@').first;
+            final serverName = parts.trim();
+            
+            final server = MCPServerConfig(
+              id: 'npm_$serverName',
+              name: 'NPM: $serverName',
+              transportType: MCPTransportType.stdio,
+              url: '',
+              command: 'npx',
+              args: [serverName],
+              autoConnect: false,
+            );
+            
+            if (!_servers.any((s) => s.id == server.id)) {
+              _servers.add(server);
+              print('$_tag: Discovered NPM server: $serverName');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('$_tag: Failed to check NPM packages: $e');
+    }
+    
+    // Check for Python MCP servers
+    try {
+      final result = await Process.run('pip', ['list', '--format=freeze']);
+      if (result.exitCode == 0) {
+        final lines = result.stdout.toString().split('\n');
+        for (final line in lines) {
+          if (line.contains('mcp')) {
+            final parts = line.split('==');
+            final serverName = parts[0].trim();
+            
+            final server = MCPServerConfig(
+              id: 'pip_$serverName',
+              name: 'PyPI: $serverName',
+              transportType: MCPTransportType.stdio,
+              url: '',
+              command: 'python',
+              args: ['-m', serverName],
+              autoConnect: false,
+            );
+            
+            if (!_servers.any((s) => s.id == server.id)) {
+              _servers.add(server);
+              print('$_tag: Discovered Python server: $serverName');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('$_tag: Failed to check Python packages: $e');
+    }
+  }
+  
+  /// Parse transport type from string
+  MCPTransportType _parseTransportType(String type) {
+    switch (type.toLowerCase()) {
+      case 'stdio':
+        return MCPTransportType.stdio;
+      case 'sse':
+        return MCPTransportType.sse;
+      case 'http':
+      case 'streamablehttp':
+        return MCPTransportType.http;
+      default:
+        return MCPTransportType.stdio;
+    }
+  }
+  
+  /// Add a server configuration
+  Future<void> addServer(MCPServerConfig server) async {
+    _servers.removeWhere((s) => s.id == server.id);
+    _servers.add(server);
+    await _saveConfigFile();
+    print('$_tag: Added server: ${server.name}');
+  }
+  
+  /// Remove a server configuration
+  Future<void> removeServer(String serverId) async {
+    _servers.removeWhere((s) => s.id == serverId);
+    await _saveConfigFile();
+    print('$_tag: Removed server: $serverId');
+  }
+  
+  /// Update a server configuration
+  Future<void> updateServer(MCPServerConfig server) async {
+    final index = _servers.indexWhere((s) => s.id == server.id);
+    if (index != -1) {
+      _servers[index] = server;
+      await _saveConfigFile();
+      print('$_tag: Updated server: ${server.name}');
+    }
+  }
+  
+  /// Get all discovered servers
+  List<MCPServerConfig> getDiscoveredServers() => List.unmodifiable(_servers);
+  
+  /// Get server by ID
+  MCPServerConfig? getServer(String serverId) {
+    try {
+      return _servers.firstWhere((s) => s.id == serverId);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Get servers by transport type
+  List<MCPServerConfig> getServersByTransport(MCPTransportType transport) {
+    return _servers.where((s) => s.transportType == transport).toList();
+  }
+  
+  /// Search servers by name
+  List<MCPServerConfig> searchServers(String query) {
+    final lowercaseQuery = query.toLowerCase();
+    return _servers.where((s) =>
+        s.name.toLowerCase().contains(lowercaseQuery) ||
+        s.id.toLowerCase().contains(lowercaseQuery)).toList();
+  }
+  
+  /// Test server connection
+  Future<bool> testServer(MCPServerConfig server) async {
+    try {
+      // Create a temporary client to test connection
+      final client = MCPClientAdapter();
+      await client.initialize(MCPClientConfig(
+        clientName: 'test-client',
+        clientVersion: '1.0.0',
+        servers: [server],
+      ));
+      
+      // Try to list tools
+      final tools = await client.listTools();
+      print('$_tag: Server ${server.name} test successful - ${tools.length} tools found');
+      
+      await client.shutdown();
+      return true;
+    } catch (e) {
+      print('$_tag: Server ${server.name} test failed: $e');
+      return false;
+    }
+  }
+  
+  /// Refresh server discovery
+  Future<void> refresh() async {
+    _servers.clear();
+    await _loadConfigFile();
+    await _discoverLocalServers();
+    print('$_tag: Refreshed server discovery - found ${_servers.length} servers');
+  }
+}

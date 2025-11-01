@@ -7,13 +7,18 @@ class LlmDataSource {
   LlmDataSource(this._aiProviderConfig);
 
   Future<ChatMessage> sendMessage(String message) async {
-    final chatModel = _aiProviderConfig.getBestAvailableChatModel();
-    if (chatModel == null) {
-      throw Exception('No AI chat model available.');
+    final adapter = _aiProviderConfig.getBestAvailableChatModel();
+    if (adapter == null || !adapter.isInitialized) {
+      throw Exception('No AI provider available.');
     }
 
-    final humanMessage = ChatMessage.human(ChatMessageContent.text(message));
-    final response = await chatModel.call([humanMessage]);
-    return response;
+    // Use the adapter's sendMessage method
+    final response = await adapter.sendMessage(
+      text: message,
+      history: [], // No history for simple LLM data source
+    );
+    
+    // Convert back to langchain format if needed
+    return ChatMessage.ai(response.content);
   }
 }

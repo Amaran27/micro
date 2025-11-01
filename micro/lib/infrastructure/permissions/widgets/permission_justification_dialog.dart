@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/permission_type.dart';
 import '../models/store_policy.dart';
-import 'store_policy_validator.dart';
+// import 'store_policy_validator.dart'; // File doesn't exist
 
 /// Callback for permission justification result
 typedef VoidCallback = void Function(bool);
@@ -15,7 +15,6 @@ class PermissionJustificationDialog extends StatelessWidget {
 
   const PermissionJustificationDialog({
     super.key,
-    Key? key,
     required this.permissionType,
     required this.policyDetails,
     this.customJustification,
@@ -67,99 +66,94 @@ class PermissionJustificationDialog extends StatelessWidget {
             // Policy details
             if (policyDetails.isRestricted ||
                 policyDetails.requiresUserInteraction)
-              {
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange),
-                  ),
-                  child: Column(
-                    children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Special Requirements Apply',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (policyDetails.isRestricted) ...[
                       Text(
-                        'Special Requirements Apply',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
+                        'This permission is restricted by store policies',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      const SizedBox(height: 8),
-                      if (policyDetails.isRestricted) ...[
-                        Text(
-                          'This permission is restricted by store policies',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                      if (policyDetails.requiresUserInteraction) ...[
-                        Text(
-                          'User interaction is required',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                      if (policyDetails.requirements.isNotEmpty) ...[
-                        Text(
-                          'Requirements:',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 4),
-                        ...policyDetails.requirements
-                            .map((requirement) => Padding(
-                                  padding: const EdgeInsets.only(left: 16),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(
-                                        Icons.check_circle,
-                                        size: 16,
-                                        color: Colors.green,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          requirement,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )),
-                      ],
                     ],
-                  ),
-                )
-              },
+                    if (policyDetails.requiresUserInteraction) ...[
+                      Text(
+                        'User interaction is required',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    if (policyDetails.requirements.isNotEmpty) ...[
+                      Text(
+                        'Requirements:',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      ...policyDetails.requirements
+                          .map((requirement) => Padding(
+                                padding: const EdgeInsets.only(left: 16),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle,
+                                      size: 16,
+                                      color: Colors.green,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        requirement,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )),
+                    ],
+                  ],
+                ),
+              ),
 
             const SizedBox(height: 24),
 
             // User guidance
             if (policyDetails.userGuidance != null)
-              {
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Guidance:',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        policyDetails.userGuidance!,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                )
-              },
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Guidance:',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      policyDetails.userGuidance!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -234,14 +228,14 @@ class PermissionJustificationDialog extends StatelessWidget {
           if (granted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: 'Permission granted',
+                content: Text('Permission granted'),
                 duration: Duration(seconds: 2),
               ),
             );
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: 'Permission denied',
+                content: Text('Permission denied'),
                 duration: Duration(seconds: 3),
               ),
             );

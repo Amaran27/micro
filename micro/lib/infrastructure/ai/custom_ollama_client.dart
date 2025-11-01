@@ -66,7 +66,7 @@ class CustomOllamaClient {
   }
 
   /// Get available models
-  Map<String, dynamic> getAvailableModels() {
+  List<Map<String, dynamic>> getAvailableModels() {
     return [
       {
         'id': 'llama2-7b',

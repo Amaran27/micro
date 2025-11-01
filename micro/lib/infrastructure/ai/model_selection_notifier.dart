@@ -1,7 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'model_selection_service.dart';
-import 'ai_provider_config.dart';
-import '../../core/utils/logger.dart';
 
 ModelSelectionService? _sharedService;
 

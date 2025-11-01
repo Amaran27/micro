@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../config/ai_provider_constants.dart';
@@ -10,14 +9,15 @@ import '../../../domain/models/ai_model.dart';
 /// Service for managing model discovery, selection, and preferences
 class ModelSelectionService {
   /// Singleton instance
-  static final ModelSelectionService instance = ModelSelectionService._internal();
-  
+  static final ModelSelectionService instance =
+      ModelSelectionService._internal();
+
   /// Internal constructor for singleton
   ModelSelectionService._internal();
-  
+
   /// Public factory constructor
   factory ModelSelectionService() => instance;
-  
+
   static final _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(
       encryptedSharedPreferences: true,
@@ -39,20 +39,23 @@ class ModelSelectionService {
   final Map<String, String> _activeModels = {};
 
   bool _isInitialized = false;
-  
+
   /// Initialize the model selection service
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     AppLogger().info('Initializing ModelSelectionService...');
-    
+
     // Load cached models first for faster UI
     await _loadCachedModels();
-    
+
     // Then load user preferences
     await _loadFavoriteModels();
     await _loadActiveModels();
-    
+
+    // Normalize any legacy/alias provider IDs to canonical forms
+    _normalizeProviderAliases();
+
     _isInitialized = true;
     AppLogger().info(
         'ModelSelectionService initialization complete. Found ${_favoriteModels.length} provider(s) with favorites');
@@ -108,6 +111,7 @@ class ModelSelectionService {
       case 'claude':
       case 'anthropic': // Support both names
         return await _fetchAnthropicModels(apiKey);
+      case 'zhipu-ai': // Registry ID
       case 'zhipuai':
       case 'z_ai': // Support both names
         return await _fetchZhipuaiModels(apiKey);
@@ -269,18 +273,19 @@ class ModelSelectionService {
     try {
       final dio = Dio();
 
-      // ZhipuAI uses JWT authentication, need to generate token
-      final token = await _generateZhipuAIToken(apiKey);
-      if (token == null) {
-        return _getDefaultZhipuaiModels();
-      }
+      // Log API key format for debugging (without revealing the key)
+      final keyType = apiKey.contains('.') ? 'multi-part' : 'simple';
+      final keyLength = apiKey.length;
+      AppLogger().info('ZhipuAI API key format: $keyType, length: $keyLength');
 
+      // ZhipuAI now uses Bearer token authentication
       final response = await dio.get(
-        'https://open.bigmodel.cn/api/paas/v4/models',
+        'https://api.z.ai/api/paas/v4/models',
         options: Options(
           headers: {
-            'Authorization': 'Bearer $token',
-            'content-type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+            'Accept-Language': 'en-US,en',
           },
         ),
       );
@@ -289,10 +294,12 @@ class ModelSelectionService {
         final data = response.data;
         final models = data['data'] as List;
 
+        AppLogger().info(
+            'Successfully fetched ${models.length} models from ZhipuAI API');
         return models.map((model) => model['id'] as String).toList();
       } else {
-        AppLogger()
-            .warning('Failed to fetch ZhipuAI models: ${response.statusCode}');
+        AppLogger().warning(
+            'Failed to fetch ZhipuAI models: ${response.statusCode}, body: ${response.data}');
         return _getDefaultZhipuaiModels();
       }
     } catch (e) {
@@ -302,59 +309,22 @@ class ModelSelectionService {
     }
   }
 
-  /// Generate JWT token for ZhipuAI API authentication
+  /// ZhipuAI now uses simple Bearer token authentication
+  /// This method is deprecated and kept for reference only
+  @deprecated
   Future<String?> _generateZhipuAIToken(String apiKey) async {
-    try {
-      // ZhipuAI uses JWT for authentication
-      // The API key format can be: {id}.{secret} or just a regular API key
-      final parts = apiKey.split('.');
-      if (parts.length != 2) {
-        AppLogger().warning('ZhipuAI API key format may be incorrect, trying direct usage');
-        // Try using the API key directly instead of failing
-        return apiKey;
-      }
-
-      final id = parts[0];
-      final secret = parts[1];
-
-      // Create JWT payload
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final payload = {
-        'iat': now,
-        'exp': now + 3600, // 1 hour expiration
-        'iss': id,
-      };
-
-      // This is a simplified JWT generation
-      // In production, use crypto package for proper HMAC-SHA256 signing using the secret
-      final header = {'alg': 'HS256', 'typ': 'JWT'};
-      final encodedHeader = base64Url.encode(utf8.encode(json.encode(header)));
-      final encodedPayload =
-          base64Url.encode(utf8.encode(json.encode(payload)));
-
-      // Note: This is a placeholder for actual JWT signing
-      // You would need to implement proper HMAC-SHA256 signing using:
-      // crypto.Hmac(sha256, utf8.encode(secret)).convert(payloadBytes)
-      final signature = 'placeholder_signature';
-
-      // Mark secret as used to avoid lint warnings
-      secret.length;
-
-      return '$encodedHeader.$encodedPayload.$signature';
-    } catch (e) {
-      AppLogger().error('Failed to generate JWT token', error: e);
-      return null;
-    }
+    // ZhipuAI now uses direct Bearer token authentication
+    // No need to generate JWT tokens
+    return apiKey;
   }
 
   /// Get default ZhipuAI models
   List<String> _getDefaultZhipuaiModels() {
     return [
-      'glm-4-flash',
-      'glm-4-air',
-      'glm-4-airx',
-      'glm-4-long',
-      'glm-4v-flash',
+      'glm-4.6',
+      'glm-4.5',
+      'glm-4.5-air',
+      'glm-4', // Legacy fallback
     ];
   }
 
@@ -609,20 +579,28 @@ class ModelSelectionService {
 
   /// Get active model for a provider
   String? getActiveModel(String providerId) {
-    return _activeModels[providerId] ?? _favoriteModels[providerId]?.first;
+    final activeModel =
+        _activeModels[providerId] ?? _favoriteModels[providerId]?.first;
+    print('DEBUG: getActiveModel for $providerId: $activeModel');
+    return activeModel;
   }
 
   /// Get all active models across providers
   Map<String, String> getAllActiveModels() {
     final activeModels = <String, String>{};
+    final providerIds = <String>{}
+      ..addAll(_availableModels.keys)
+      ..addAll(_favoriteModels.keys)
+      ..addAll(_activeModels.keys);
 
-    for (final providerId in _availableModels.keys) {
+    for (final providerId in providerIds) {
       final activeModel = getActiveModel(providerId);
       if (activeModel != null) {
         activeModels[providerId] = activeModel;
       }
     }
 
+    print('DEBUG: getAllActiveModels returning: $activeModels');
     return activeModels;
   }
 
@@ -683,25 +661,28 @@ class ModelSelectionService {
         _availableModels[model.provider]!.add(model.modelId);
       }
 
-      // Ensure ZhipuAI models are available even if not cached
-      if (!_availableModels.containsKey('zhipuai') || _availableModels['zhipuai']!.isEmpty) {
-        _availableModels['zhipuai'] = _getDefaultZhipuaiModels();
-        AppLogger().info('Added default ZhipuAI models to available models');
+      // Ensure ZhipuAI models are available even if not cached (canonical id only)
+      if (!_availableModels.containsKey('zhipu-ai') ||
+          _availableModels['zhipu-ai']!.isEmpty) {
+        _availableModels['zhipu-ai'] = _getDefaultZhipuaiModels();
+        AppLogger().info(
+            'Added default ZhipuAI models to available models (zhipu-ai)');
       }
 
       AppLogger().info(
           'Loaded ${cachedModels.length} cached models from ${cachedModels.map((m) => m.provider).toSet().length} providers');
-          
+
       // If we have cached models, no need to fetch from API immediately
       if (cachedModels.isNotEmpty) {
         AppLogger().info('Using cached models, skipping API fetch');
       }
     } catch (e) {
       AppLogger().error('Failed to load cached models', error: e);
-      
-      // Add default models for ZhipuAI even if there's an error
-      _availableModels['zhipuai'] = _getDefaultZhipuaiModels();
-      AppLogger().info('Added default ZhipuAI models due to cache loading error');
+
+      // Add default models for ZhipuAI even if there's an error (canonical id)
+      _availableModels['zhipu-ai'] = _getDefaultZhipuaiModels();
+      AppLogger().info(
+          'Added default ZhipuAI models due to cache loading error (zhipu-ai)');
     }
   }
 
@@ -768,13 +749,84 @@ class ModelSelectionService {
     }
   }
 
-  
-
   /// Clear all model selections
   Future<void> clearSelections() async {
     _favoriteModels.clear();
     _activeModels.clear();
     await _storage.delete(key: 'favorite_models');
     await _storage.delete(key: 'active_models');
+  }
+
+  /// Normalize aliased provider IDs into canonical keys to avoid duplicates
+  void _normalizeProviderAliases() {
+    const canonical = 'zhipu-ai';
+    const aliases = ['zhipuai', 'z_ai'];
+
+    // Helper to merge lists and dedupe while preserving order
+    List<T> mergeLists<T>(List<T>? a, List<T>? b, [List<T>? c]) {
+      final seen = <T>{};
+      final result = <T>[];
+      for (final list in [a, b, c]) {
+        if (list == null) continue;
+        for (final item in list) {
+          if (seen.add(item)) result.add(item);
+        }
+      }
+      return result;
+    }
+
+    // available models
+    final mergedAvail = mergeLists(
+      _availableModels[canonical],
+      _availableModels[aliases[0]],
+      _availableModels[aliases[1]],
+    );
+    if (mergedAvail.isNotEmpty) {
+      _availableModels[canonical] = mergedAvail;
+    }
+    _availableModels.remove(aliases[0]);
+    _availableModels.remove(aliases[1]);
+
+    // favorite models
+    final mergedFav = mergeLists(
+      _favoriteModels[canonical],
+      _favoriteModels[aliases[0]],
+      _favoriteModels[aliases[1]],
+    );
+    if (mergedFav.isNotEmpty) {
+      _favoriteModels[canonical] = mergedFav;
+    }
+    _favoriteModels.remove(aliases[0]);
+    _favoriteModels.remove(aliases[1]);
+
+    // active models (single value, prefer canonical, else first alias found)
+    final active = _activeModels[canonical] ??
+        _activeModels[aliases[0]] ??
+        _activeModels[aliases[1]];
+    if (active != null) {
+      _activeModels[canonical] = active;
+    }
+    _activeModels.remove(aliases[0]);
+    _activeModels.remove(aliases[1]);
+
+    // cached models
+    final mergedCached = mergeLists<AIModel>(
+      _cachedModels[canonical],
+      _cachedModels[aliases[0]],
+      _cachedModels[aliases[1]],
+    );
+    if (mergedCached.isNotEmpty) {
+      // Dedupe by modelId
+      final seenIds = <String>{};
+      final deduped = <AIModel>[];
+      for (final m in mergedCached) {
+        if (seenIds.add(m.modelId)) deduped.add(m);
+      }
+      _cachedModels[canonical] = deduped;
+    }
+    _cachedModels.remove(aliases[0]);
+    _cachedModels.remove(aliases[1]);
+
+    AppLogger().info('Normalized provider aliases to canonical "$canonical"');
   }
 }

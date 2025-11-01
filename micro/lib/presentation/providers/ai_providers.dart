@@ -1,9 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
-import 'package:state_notifier/state_notifier.dart';
 
 import '../../infrastructure/ai/ai_provider_config.dart';
-import '../../infrastructure/ai/model_selection_service.dart';
 import '../../infrastructure/ai/model_selection_notifier.dart';
 import '../../core/utils/logger.dart';
 import 'app_providers.dart';
@@ -26,7 +23,8 @@ class FavoriteModelsNotifier extends AsyncNotifier<Map<String, List<String>>> {
     // Ensure the ModelSelectionService is initialized and return the
     // persisted favorite models. This avoids returning an immediate
     // empty map which caused the UI to think no favorites were set.
-    final service = await ref.watch(initializedModelSelectionServiceProvider.future);
+    final service =
+        await ref.watch(initializedModelSelectionServiceProvider.future);
     return service.getAllFavoriteModels();
   }
 
@@ -40,7 +38,9 @@ class FavoriteModelsNotifier extends AsyncNotifier<Map<String, List<String>>> {
 }
 
 /// Provider for favorite models using AsyncNotifierProvider (Riverpod 3.0+ pattern)
-final favoriteModelsProvider = AsyncNotifierProvider<FavoriteModelsNotifier, Map<String, List<String>>>(() {
+final favoriteModelsProvider =
+    AsyncNotifierProvider<FavoriteModelsNotifier, Map<String, List<String>>>(
+        () {
   return FavoriteModelsNotifier();
 });
 
@@ -51,56 +51,74 @@ void loadFavoriteModels(WidgetRef ref) {
 
 /// Provider for active models across all providers
 final activeModelsProvider = FutureProvider<Map<String, String>>((ref) async {
-  final service = await ref.watch(initializedModelSelectionServiceProvider.future);
+  final service =
+      await ref.watch(initializedModelSelectionServiceProvider.future);
   return service.getAllActiveModels();
 });
 
 /// Provider for current selected model
 final currentSelectedModelProvider = FutureProvider<String?>((ref) async {
-    final service = await ref.watch(initializedModelSelectionServiceProvider.future);
+  final service =
+      await ref.watch(initializedModelSelectionServiceProvider.future);
   final prefs = ref.watch(sharedPreferencesProvider);
-  
+
+  print('DEBUG: currentSelectedModelProvider called');
+
   // First try to get the last selected model from preferences
   final lastSelectedModel = prefs.getString('last_selected_model');
-  if (lastSelectedModel != null) {
-    // Get the favorite models
-    final favorites = <String, List<String>>{};
-    for (final providerId in [
-      'openai',
-      'google',
-      'claude',
-      'anthropic',
-      'zhipuai',
-      'z_ai',
-      'azure',
-      'cohere',
-      'mistral'
-    ]) {
-      favorites[providerId] = service.getFavoriteModels(providerId);
-    }
-    
-    // Verify the model is still available in favorites
-    for (final models in favorites.values) {
-      if (models.contains(lastSelectedModel)) {
-        return lastSelectedModel;
-      }
-    }
+  print('DEBUG: Last selected model from prefs: $lastSelectedModel');
+
+  // If we have a last selected model, trust the user's choice
+  // The model was already validated when it was selected
+  if (lastSelectedModel != null && lastSelectedModel.isNotEmpty) {
+    print('DEBUG: Using last selected model from prefs: $lastSelectedModel');
+    return lastSelectedModel;
   }
 
-  // Fall back to first available active model
+  // Only if no model is selected, fall back to active/favorite models
+  // Get active models first to check availability
   final activeModels = service.getAllActiveModels();
+  print('DEBUG: Active models: $activeModels');
+
+  // Fall back to active models
   if (activeModels.isNotEmpty) {
+    // If there's no last selected model, prioritize ZhipuAI if it has an active model
+    final zhipuaiModel = activeModels['zhipuai'];
+    if (zhipuaiModel != null) {
+      print('DEBUG: Using ZhipuAI model: $zhipuaiModel');
+      return zhipuaiModel;
+    }
+
+    // Otherwise check for Google model
+    final googleModel = activeModels['google'];
+    if (googleModel != null) {
+      print('DEBUG: Using Google model: $googleModel');
+      return googleModel;
+    }
+
+    // Otherwise return the first available model
+    print('DEBUG: Using first available model: ${activeModels.values.first}');
     return activeModels.values.first;
   }
 
   // Fall back to first favorite model
-  for (final providerId in ['openai', 'google', 'claude', 'anthropic', 'zhipuai', 'z_ai']) {
+  for (final providerId in [
+    'openai',
+    'google',
+    'claude',
+    'anthropic',
+    'zhipuai',
+    'z_ai'
+  ]) {
     final providerFavorites = service.getFavoriteModels(providerId);
     if (providerFavorites.isNotEmpty) {
+      print(
+          'DEBUG: Using first favorite model for $providerId: ${providerFavorites.first}');
       return providerFavorites.first;
     }
   }
 
+  print('DEBUG: No model found, returning null');
   return null;
 });
 

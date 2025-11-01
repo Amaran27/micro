@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../../core/utils/logger.dart';
-import 'comprehensive_llm_provider.dart';
+import 'llm_provider_interface.dart';
 
 /// Additional LLM providers implementation
 ///

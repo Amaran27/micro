@@ -31,6 +31,8 @@ void main() {
       // Assert
       final zhipuaiModels = AIProviderConstants.defaultModels['zhipuai'];
       expect(zhipuaiModels, isNotNull);
+      expect(zhipuaiModels, contains('glm-4.6-flash'));
+      expect(zhipuaiModels, contains('glm-4.5-flash'));
       expect(zhipuaiModels, contains('glm-4-flash'));
     });
   });

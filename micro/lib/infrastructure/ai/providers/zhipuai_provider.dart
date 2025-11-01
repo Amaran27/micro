@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:langchain_openai/langchain_openai.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/utils/logger.dart';
@@ -7,14 +6,16 @@ import '../secure_api_storage.dart';
 import '../../../domain/models/ai_model.dart';
 
 /// ZhipuAI (GLM) provider implementation
+/// NOTE: This requires langchain_openai package to be added to pubspec.yaml
+/// Currently, this is a placeholder implementation
 class ZhipuAIProvider {
   final AppLogger _logger = AppLogger();
   final Dio _dio = Dio();
 
-  static const String _baseUrl = 'https://open.bigmodel.cn/api/paas/v4';
+  static const String _baseUrl = 'https://api.z.ai/api/paas/v4';
 
   /// Initialize ZhipuAI provider
-  Future<ChatOpenAI?> initialize() async {
+  Future<dynamic> initialize() async {
     try {
       final apiKey = await SecureApiStorage.getApiKey('zhipuai');
       if (apiKey == null || apiKey.isEmpty) {
@@ -22,8 +23,9 @@ class ZhipuAIProvider {
         return null;
       }
 
-      // Create custom chat model implementation for ZhipuAI
-      return _createZhipuAIChatModel(apiKey);
+      _logger.warning(
+          'ZhipuAI: langchain_openai package not available. Using placeholder.');
+      return null; // Placeholder
     } catch (e) {
       _logger.error('Failed to initialize ZhipuAI provider', error: e);
       return null;
@@ -31,17 +33,11 @@ class ZhipuAIProvider {
   }
 
   /// Create ZhipuAI chat model using OpenAI-compatible interface
-  ChatOpenAI _createZhipuAIChatModel(String apiKey) {
-    // Use OpenAI client with custom base URL for ZhipuAI
-    return ChatOpenAI(
-      apiKey: apiKey,
-      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-      defaultOptions: ChatOpenAIOptions(
-        model: 'glm-4-flash', // Default model
-        maxTokens: 4000,
-        temperature: 0.7,
-      ),
-    );
+  /// TODO: Implement when langchain_openai is available in pubspec.yaml
+  dynamic _createZhipuAIChatModel(String apiKey) {
+    throw UnimplementedError(
+        'ZhipuAI chat model creation requires langchain_openai package. '
+        'Please add langchain_openai to pubspec.yaml dependencies.');
   }
 
   /// Get available ZhipuAI models
@@ -52,18 +48,14 @@ class ZhipuAIProvider {
         return _getDefaultModels();
       }
 
-      // ZhipuAI uses JWT authentication, need to generate token
-      final token = await _generateJWTToken(apiKey);
-      if (token == null) {
-        return _getDefaultModels();
-      }
-
+      // ZhipuAI uses Bearer token authentication
       final response = await _dio.get(
         '$_baseUrl/models',
         options: Options(
           headers: {
-            'Authorization': 'Bearer $token',
-            'content-type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+            'Accept-Language': 'en-US,en',
           },
         ),
       );
@@ -72,38 +64,69 @@ class ZhipuAIProvider {
         final data = response.data;
         final models = <AIModel>[];
 
+        _logger.info('ZhipuAI API response: $data');
+
         if (data['data'] != null) {
           for (final model in data['data']) {
             if (model['id'] != null) {
-              models.add(AIModel(
-                provider: 'zhipuai',
-                modelId: model['id'],
-                displayName: _getDisplayName(model['id']),
-                description: model['description'] ?? 'ZhipuAI GLM model',
-                metadata: {
-                  'capabilities': _getModelCapabilities(model['id']),
-                  'contextWindow': _getContextWindow(model['id']),
-                  'pricing': _getModelPricing(model['id']),
-                },
-              ));
+              final modelId = model['id'] as String;
+              _logger.info('Processing ZhipuAI model: $modelId');
+
+              // Only process models that we know exist and are valid
+              if (_isValidModel(modelId)) {
+                models.add(AIModel(
+                  provider: 'zhipuai',
+                  modelId: modelId,
+                  displayName: _getDisplayName(modelId),
+                  description: model['description'] ?? 'ZhipuAI GLM model',
+                  metadata: {
+                    'capabilities': _getModelCapabilities(modelId),
+                    'contextWindow': _getContextWindow(modelId),
+                    'pricing': _getModelPricing(modelId),
+                    'created': model['created'],
+                    'ownedBy': model['owned_by'] ?? 'z-ai',
+                  },
+                ));
+              } else {
+                _logger.warning('Skipping unknown model: $modelId');
+              }
             }
           }
         }
 
-        return models.isNotEmpty ? models : _getDefaultModels();
+        _logger.info(
+            'Successfully fetched ${models.length} models from ZhipuAI API');
+        return models; // Do not silently fall back; let caller decide
       } else {
-        _logger
-            .warning('Failed to fetch ZhipuAI models: ${response.statusCode}');
-        return _getDefaultModels();
+        _logger.warning(
+            'Failed to fetch ZhipuAI models: ${response.statusCode}, body: ${response.data}');
+        return [];
       }
     } catch (e) {
-      _logger.warning('Error fetching ZhipuAI models, using defaults',
-          error: e);
-      return _getDefaultModels();
+      _logger.warning('Error fetching ZhipuAI models', error: e);
+      return [];
     }
   }
 
-  
+  /// Check if model ID is valid and known
+  bool _isValidModel(String modelId) {
+    const validModels = {
+      'glm-4',
+      'glm-4-plus',
+      'glm-4-0520',
+      'glm-4-air',
+      'glm-4-airx',
+      'glm-4-long',
+      'glm-4-flash',
+      'glm-4.5',
+      'glm-4.5-flash',
+      'glm-4.5-air',
+      'glm-4.5v',
+      'glm-4.6',
+      'glm-4.6-flash',
+    };
+    return validModels.contains(modelId);
+  }
 
   /// Generate JWT token for ZhipuAI API authentication
   Future<String?> _generateJWTToken(String apiKey) async {
@@ -112,7 +135,8 @@ class ZhipuAIProvider {
       // The API key format can be: {id}.{secret} or just a regular API key
       final parts = apiKey.split('.');
       if (parts.length != 2) {
-        _logger.warning('ZhipuAI API key format may be incorrect, trying direct usage');
+        _logger.warning(
+            'ZhipuAI API key format may be incorrect, trying direct usage');
         // Try using the API key directly instead of failing
         return apiKey;
       }
@@ -158,57 +182,69 @@ class ZhipuAIProvider {
   /// Get default ZhipuAI models
   List<AIModel> _getDefaultModels() {
     return [
+      // GLM-4.5-Flash (FREE)
       AIModel(
         provider: 'zhipuai',
-        modelId: 'glm-4-flash',
-        displayName: 'GLM-4 Flash',
-        description: 'Fast and efficient GLM model for quick responses',
+        modelId: 'glm-4.5-flash',
+        displayName: 'GLM-4.5 Flash (Free)',
+        description: 'Free model for testing and light usage',
         metadata: {
-          'capabilities': ['text', 'reasoning', 'coding'],
+          'capabilities': ['text', 'reasoning', 'coding', 'analysis'],
+          'contextWindow': 128000,
+          'pricing': {'input': 0.0, 'output': 0.0},
+          'free': true,
+        },
+      ),
+      // GLM-4.6 (latest)
+      AIModel(
+        provider: 'zhipuai',
+        modelId: 'glm-4.6',
+        displayName: 'GLM-4.6',
+        description: 'Latest flagship model with enhanced capabilities',
+        metadata: {
+          'capabilities': [
+            'text',
+            'reasoning',
+            'coding',
+            'analysis',
+            'multilingual'
+          ],
           'contextWindow': 128000,
           'pricing': {'input': 0.1, 'output': 0.1},
         },
       ),
+      // GLM-4.5 (balanced)
       AIModel(
         provider: 'zhipuai',
-        modelId: 'glm-4-air',
-        displayName: 'GLM-4 Air',
-        description: 'Balanced GLM model for general tasks',
+        modelId: 'glm-4.5',
+        displayName: 'GLM-4.5',
+        description: 'Balanced performance model for general tasks',
         metadata: {
-          'capabilities': ['text', 'reasoning', 'coding'],
+          'capabilities': ['text', 'reasoning', 'coding', 'analysis'],
           'contextWindow': 128000,
-          'pricing': {'input': 1.0, 'output': 1.0},
+          'pricing': {'input': 0.05, 'output': 0.05},
         },
       ),
+      // GLM-4.5-air (lightweight)
       AIModel(
         provider: 'zhipuai',
-        modelId: 'glm-4-airx',
-        displayName: 'GLM-4 AirX',
-        description: 'Enhanced GLM model with improved capabilities',
+        modelId: 'glm-4.5-air',
+        displayName: 'GLM-4.5 Air',
+        description: 'Lightweight model for faster responses',
         metadata: {
-          'capabilities': ['text', 'reasoning', 'analysis', 'coding'],
+          'capabilities': ['text', 'reasoning', 'coding', 'analysis'],
           'contextWindow': 128000,
-          'pricing': {'input': 5.0, 'output': 5.0},
+          'pricing': {'input': 0.5, 'output': 0.5},
         },
       ),
+      // Legacy models for fallback
       AIModel(
         provider: 'zhipuai',
-        modelId: 'glm-4-long',
-        displayName: 'GLM-4 Long',
-        description: 'GLM model with extended context window',
+        modelId: 'glm-4',
+        displayName: 'GLM-4',
+        description: 'Original GLM-4 model',
         metadata: {
-          'capabilities': ['text', 'reasoning', 'long-context'],
-          'contextWindow': 1000000,
-          'pricing': {'input': 5.0, 'output': 5.0},
-        },
-      ),
-      AIModel(
-        provider: 'zhipuai',
-        modelId: 'glm-4v-flash',
-        displayName: 'GLM-4V Flash',
-        description: 'Multimodal GLM model with vision capabilities',
-        metadata: {
-          'capabilities': ['text', 'vision', 'reasoning'],
+          'capabilities': ['text', 'reasoning', 'coding', 'analysis'],
           'contextWindow': 128000,
           'pricing': {'input': 0.1, 'output': 0.1},
         },
@@ -219,18 +255,30 @@ class ZhipuAIProvider {
   /// Get display name for model
   String _getDisplayName(String modelId) {
     switch (modelId) {
-      case 'glm-4-flash':
-        return 'GLM-4 Flash';
+      case 'glm-4-plus':
+        return 'GLM-4 Plus';
+      case 'glm-4-0520':
+        return 'GLM-4 0520';
+      case 'glm-4':
+        return 'GLM-4';
       case 'glm-4-air':
         return 'GLM-4 Air';
       case 'glm-4-airx':
         return 'GLM-4 AirX';
       case 'glm-4-long':
         return 'GLM-4 Long';
-      case 'glm-4v-flash':
-        return 'GLM-4V Flash';
+      case 'glm-4-flash':
+        return 'GLM-4 Flash';
+      case 'glm-4.6':
+        return 'GLM-4.6';
+      case 'glm-4.5-flash':
+        return 'GLM-4.5 Flash';
+      case 'glm-4.5-air':
+        return 'GLM-4.5 Air';
+      case 'glm-4.6-flash':
+        return 'GLM-4.6 Flash';
       default:
-        return modelId.toUpperCase();
+        return modelId.toUpperCase().replaceAll('-', ' ');
     }
   }
 
@@ -250,6 +298,11 @@ class ZhipuAIProvider {
       return [...baseCapabilities, 'coding', 'analysis'];
     }
 
+    // Enhanced capabilities for newer models
+    if (modelId.contains('4.5') || modelId.contains('4.6')) {
+      return [...baseCapabilities, 'coding', 'analysis', 'multilingual'];
+    }
+
     return baseCapabilities;
   }
 
@@ -264,6 +317,12 @@ class ZhipuAIProvider {
   /// Get model pricing (per 1M tokens in RMB)
   Map<String, double> _getModelPricing(String modelId) {
     switch (modelId) {
+      case 'glm-4-plus':
+        return {'input': 0.1, 'output': 0.1};
+      case 'glm-4-0520':
+        return {'input': 0.1, 'output': 0.1};
+      case 'glm-4':
+        return {'input': 0.1, 'output': 0.1};
       case 'glm-4-flash':
         return {'input': 0.1, 'output': 0.1};
       case 'glm-4-air':
@@ -272,7 +331,13 @@ class ZhipuAIProvider {
         return {'input': 5.0, 'output': 5.0};
       case 'glm-4-long':
         return {'input': 5.0, 'output': 5.0};
-      case 'glm-4v-flash':
+      case 'glm-4.5-flash':
+        return {'input': 0.05, 'output': 0.05};
+      case 'glm-4.5-air':
+        return {'input': 0.5, 'output': 0.5};
+      case 'glm-4.6':
+        return {'input': 0.1, 'output': 0.1};
+      case 'glm-4.6-flash':
         return {'input': 0.1, 'output': 0.1};
       default:
         return {'input': 1.0, 'output': 1.0};
@@ -288,11 +353,11 @@ class ZhipuAIProvider {
     double temperature = 0.7,
   }) async {
     try {
-      // Generate JWT token
-      final token = await _generateJWTToken(apiKey);
-      if (token == null) {
-        throw Exception('Failed to generate authentication token');
-      }
+      // Log API key format for debugging (without revealing the key)
+      final keyType = apiKey.contains('.') ? 'multi-part' : 'simple';
+      final keyLength = apiKey.length;
+      _logger.info(
+          'ZhipuAI sendMessage - API key format: $keyType, length: $keyLength, model: $model');
 
       // Convert messages to ZhipuAI format
       final zhipuaiMessages = _convertMessagesToZhipuAIFormat(messages);
@@ -309,20 +374,31 @@ class ZhipuAIProvider {
         data: requestData,
         options: Options(
           headers: {
-            'Authorization': 'Bearer $token',
-            'content-type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+            'Accept-Language': 'en-US,en',
           },
         ),
       );
 
+      _logger.info('ZhipuAI API response status: ${response.statusCode}');
+      _logger.info('ZhipuAI API response data: ${response.data}');
+
       if (response.statusCode == 200) {
         final choices = response.data['choices'];
+        _logger.info('ZhipuAI choices: $choices');
+
         if (choices != null && choices.isNotEmpty) {
-          return choices[0]['message']['content'] ?? '';
+          final content = choices[0]['message']['content'] ?? '';
+          _logger.info('ZhipuAI extracted content: "$content"');
+          return content;
         }
+
+        _logger.warning('ZhipuAI no choices in response');
       }
 
-      throw Exception('Invalid response from ZhipuAI API');
+      throw Exception(
+          'Invalid response from ZhipuAI API: ${response.statusCode}');
     } catch (e) {
       _logger.error('Error sending message to ZhipuAI', error: e);
       rethrow;
@@ -344,4 +420,21 @@ class ZhipuAIProvider {
 
     return zhipuaiMessages;
   }
+
+  /// Validate ZhipuAI API key format
+  bool _isValidApiKey(String apiKey) {
+    // ZhipuAI API keys should be 49+ characters with a dot separator
+    // Format: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxx
+    return apiKey.length >= 49 && apiKey.contains('.');
+  }
+}
+
+/// Custom exception for ZhipuAI authentication errors
+class ZhipuAIAuthenticationException implements Exception {
+  final String message;
+
+  const ZhipuAIAuthenticationException(this.message);
+
+  @override
+  String toString() => message;
 }

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants.dart';
 import '../../config/app_config.dart';
-import '../pages/home_page.dart';
 import '../pages/enhanced_ai_chat_page.dart';
 import '../pages/dashboard_page.dart';
 import '../widgets/simple_tools_page.dart';
@@ -12,6 +11,7 @@ import '../pages/workflows_page.dart';
 import '../pages/onboarding_page.dart';
 import '../pages/unified_provider_settings.dart';
 import '../providers/app_providers.dart';
+import '../pages/agent_dashboard_page.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -31,11 +31,11 @@ class AppRouter {
           return MainNavigationPage(child: child);
         },
         routes: [
-          // Home
+          // Dashboard (Landing page - replaces Home)
           GoRoute(
-            path: RouteConstants.home,
-            name: 'home',
-            builder: (context, state) => const HomePage(),
+            path: RouteConstants.dashboard,
+            name: 'dashboard',
+            builder: (context, state) => const DashboardPage(),
           ),
 
           // Chat
@@ -43,13 +43,6 @@ class AppRouter {
             path: RouteConstants.chat,
             name: 'chat',
             builder: (context, state) => const EnhancedAIChatPage(),
-          ),
-
-          // Dashboard
-          GoRoute(
-            path: RouteConstants.dashboard,
-            name: 'dashboard',
-            builder: (context, state) => const DashboardPage(),
           ),
 
           // Tools
@@ -81,6 +74,13 @@ class AppRouter {
             ],
           ),
 
+          // Home route kept for backward compatibility (redirects to dashboard)
+          GoRoute(
+            path: RouteConstants.home,
+            name: 'home',
+            redirect: (context, state) => RouteConstants.dashboard,
+          ),
+
           // Workflow Detail
           GoRoute(
             path: RouteConstants.workflowDetail,
@@ -106,6 +106,30 @@ class AppRouter {
             path: RouteConstants.audit,
             name: 'audit',
             builder: (context, state) => const AuditPage(),
+          ),
+
+          // Agents
+          GoRoute(
+            path: RouteConstants.agents,
+            name: 'agents',
+            redirect: (context, state) => RouteConstants.agentDashboard,
+          ),
+
+          // Agent Dashboard
+          GoRoute(
+            path: RouteConstants.agentDashboard,
+            name: 'agent_dashboard',
+            builder: (context, state) => const AgentDashboardPage(),
+          ),
+
+          // Agent Detail
+          GoRoute(
+            path: RouteConstants.agentDetail,
+            name: 'agent_detail',
+            builder: (context, state) {
+              final agentId = state.pathParameters['id']!;
+              return AgentDetailPage(agentId: agentId);
+            },
           ),
         ],
       ),
@@ -157,10 +181,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   final List<NavigationItem> _navigationItems = [
     NavigationItem(
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
-      label: 'Home',
-      route: RouteConstants.home,
+      icon: Icons.dashboard_outlined,
+      selectedIcon: Icons.dashboard,
+      label: 'Dashboard',
+      route: RouteConstants.dashboard,
     ),
     NavigationItem(
       icon: Icons.chat_outlined,
@@ -169,16 +193,16 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       route: RouteConstants.chat,
     ),
     NavigationItem(
-      icon: Icons.dashboard_outlined,
-      selectedIcon: Icons.dashboard,
-      label: 'Dashboard',
-      route: RouteConstants.dashboard,
-    ),
-    NavigationItem(
       icon: Icons.build_outlined,
       selectedIcon: Icons.build,
       label: 'Tools',
       route: RouteConstants.tools,
+    ),
+    NavigationItem(
+      icon: Icons.smart_toy_outlined,
+      selectedIcon: Icons.smart_toy,
+      label: 'Agents',
+      route: RouteConstants.agents,
     ),
     NavigationItem(
       icon: Icons.settings_outlined,
@@ -268,6 +292,27 @@ class NavigationItem {
 }
 
 // Placeholder pages for routes that don\'t exist yet
+class AgentDetailPage extends StatelessWidget {
+  final String agentId;
+
+  const AgentDetailPage({
+    super.key,
+    required this.agentId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Agent: $agentId'),
+      ),
+      body: Center(
+        child: Text('Agent Detail Page\nID: $agentId'),
+      ),
+    );
+  }
+}
+
 class WorkflowDetailPage extends StatelessWidget {
   final String workflowId;
 

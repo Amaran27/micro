@@ -41,7 +41,7 @@ class AppLogger {
           lineLength: 120,
           colors: true,
           printEmojis: true,
-          printTime: true,
+          dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
         ),
         output: MultiOutput([
           ConsoleOutput(),
@@ -64,7 +64,7 @@ class AppLogger {
           lineLength: 120,
           colors: true,
           printEmojis: true,
-          printTime: true,
+          dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
         ),
       );
       _logger.e('Failed to initialize file logging: $e');
