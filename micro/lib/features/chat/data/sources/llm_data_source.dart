@@ -17,7 +17,7 @@ class LlmDataSource {
       text: message,
       history: [], // No history for simple LLM data source
     );
-    
+
     // Convert back to langchain format if needed
     return ChatMessage.ai(response.content);
   }

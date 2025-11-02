@@ -23,19 +23,25 @@ class ZhipuAIDebugHelper {
         return;
       }
 
-      final keyType = apiKey.contains('.') ? 'multi-part (old format)' : 'simple (new format)';
+      final keyType = apiKey.contains('.')
+          ? 'multi-part (old format)'
+          : 'simple (new format)';
       final keyLength = apiKey.length;
-      
+
       AppLogger().info('ZhipuAI API Key Debug:');
       AppLogger().info('  - Format: $keyType');
       AppLogger().info('  - Length: $keyLength characters');
-      AppLogger().info('  - First 3 chars: ${apiKey.substring(0, apiKey.length > 3 ? 3 : 0)}***');
-      AppLogger().info('  - Last 3 chars: ***${apiKey.length > 3 ? apiKey.substring(apiKey.length - 3) : ''}');
-      
+      AppLogger().info(
+          '  - First 3 chars: ${apiKey.substring(0, apiKey.length > 3 ? 3 : 0)}***');
+      AppLogger().info(
+          '  - Last 3 chars: ***${apiKey.length > 3 ? apiKey.substring(apiKey.length - 3) : ''}');
+
       // Check if it looks like the old JWT format
       if (apiKey.contains('.') && apiKey.split('.').length == 3) {
-        AppLogger().warning('  - API key appears to be in old JWT format (id.secret.signature)');
-        AppLogger().warning('  - This format is deprecated, please get a new API key from ZhipuAI platform');
+        AppLogger().warning(
+            '  - API key appears to be in old JWT format (id.secret.signature)');
+        AppLogger().warning(
+            '  - This format is deprecated, please get a new API key from ZhipuAI platform');
       }
     } catch (e) {
       AppLogger().error('Failed to debug API key', error: e);
@@ -56,7 +62,9 @@ class ZhipuAIDebugHelper {
         'https://api.z.ai/api/paas/v4/chat/completions',
         data: {
           'model': 'glm-4.6',
-          'messages': [{'role': 'user', 'content': 'test'}],
+          'messages': [
+            {'role': 'user', 'content': 'test'}
+          ],
           'max_tokens': 1,
         },
         options: Options(
@@ -72,7 +80,8 @@ class ZhipuAIDebugHelper {
         AppLogger().info('ZhipuAI API key test successful');
         return true;
       } else {
-        AppLogger().warning('ZhipuAI API key test failed with status: ${response.statusCode}');
+        AppLogger().warning(
+            'ZhipuAI API key test failed with status: ${response.statusCode}');
         AppLogger().warning('Response body: ${response.data}');
         return false;
       }
