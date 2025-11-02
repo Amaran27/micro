@@ -12,10 +12,11 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show SocketException;
 import 'package:dio/dio.dart';
 import 'package:micro/domain/models/api_stream.dart';
 import 'package:micro/core/utils/logger.dart';
-import 'base_provider.dart';
+import '../base_provider.dart';
 
 /// Region enum for Z.AI API endpoints
 enum ZaiRegion {
@@ -132,7 +133,8 @@ class ZaiProvider extends BaseProvider {
         body['thinking'] = {'type': 'enabled'};
       }
 
-      _logger.info('ZaiProvider: requesting model=$modelId, reasoning=$enableReasoning');
+      _logger.info(
+          'ZaiProvider: requesting model=$modelId, reasoning=$enableReasoning');
 
       // Stream the request
       response = await dio.post<ResponseBody>(
@@ -143,14 +145,16 @@ class ZaiProvider extends BaseProvider {
       );
 
       // Parse SSE stream
-      await _parseStreamResponse(response.data!.stream, controller, cancelToken);
+      await _parseStreamResponse(
+          response.data!.stream, controller, cancelToken);
     } catch (e) {
       if (!controller.isClosed) {
         // Map Dio errors to friendly error chunks
         if (e is DioException) {
           final status = e.response?.statusCode ?? 0;
           final code = 'dio_${e.type}';
-          _logger.error('ZaiProvider: DioException code=$code status=$status: ${e.message}');
+          _logger.error(
+              'ZaiProvider: DioException code=$code status=$status: ${e.message}');
           controller.add(
             ErrorChunk(
               code: code,
@@ -220,7 +224,8 @@ class ZaiProvider extends BaseProvider {
           } catch (e) {
             _logger.warning('ZaiProvider: parse error: $e, line: $line');
             controller.add(
-              ErrorChunk(code: 'parse_error', message: 'Invalid JSON from provider'),
+              ErrorChunk(
+                  code: 'parse_error', message: 'Invalid JSON from provider'),
             );
             continue;
           }
@@ -242,7 +247,8 @@ class ZaiProvider extends BaseProvider {
                 // Reasoning content (Z.AI thinking mode)
                 if (delta.containsKey('reasoning') ||
                     delta.containsKey('reasoning_content')) {
-                  final reasoning = delta['reasoning'] ?? delta['reasoning_content'];
+                  final reasoning =
+                      delta['reasoning'] ?? delta['reasoning_content'];
                   if (reasoning is String && reasoning.isNotEmpty) {
                     controller.add(ReasoningChunk(reasoning));
                   }
@@ -255,16 +261,20 @@ class ZaiProvider extends BaseProvider {
               final usage = parsed['usage'] as Map<String, dynamic>;
               final inputTokens = (usage['prompt_tokens'] ?? 0) as int;
               final outputTokens = (usage['completion_tokens'] ?? 0) as int;
-              final cacheReadTokens = usage['prompt_tokens_from_cache_read'] as int?;
-              final cacheWriteTokens = usage['prompt_tokens_written_to_cache'] as int?;
+              final cacheReadTokens =
+                  usage['prompt_tokens_from_cache_read'] as int?;
+              final cacheWriteTokens =
+                  usage['prompt_tokens_written_to_cache'] as int?;
 
               // Compute cost if we have pricing
               final modelInfo = getModelInfo();
               double? totalCost;
-              if (modelInfo.inputPrice != null && modelInfo.outputPrice != null) {
+              if (modelInfo.inputPrice != null &&
+                  modelInfo.outputPrice != null) {
                 totalCost = (inputTokens * (modelInfo.inputPrice ?? 0.0)) +
                     (outputTokens * (modelInfo.outputPrice ?? 0.0));
-                if (cacheReadTokens != null && modelInfo.cacheReadsPrice != null) {
+                if (cacheReadTokens != null &&
+                    modelInfo.cacheReadsPrice != null) {
                   totalCost += cacheReadTokens * modelInfo.cacheReadsPrice!;
                 }
               }
@@ -282,7 +292,9 @@ class ZaiProvider extends BaseProvider {
           } catch (e) {
             _logger.warning('ZaiProvider: mapping error: $e');
             controller.add(
-              ErrorChunk(code: 'mapping_error', message: 'Failed to map provider response'),
+              ErrorChunk(
+                  code: 'mapping_error',
+                  message: 'Failed to map provider response'),
             );
           }
         }
@@ -325,13 +337,11 @@ class ZaiProvider extends BaseProvider {
       return 'Connection timeout: Check your internet connection.';
     } else if (e.type == DioExceptionType.receiveTimeout) {
       return 'Request timeout: Provider is taking too long to respond.';
-    } else if (e.type == DioExceptionType.unknown && e.error is SocketException) {
+    } else if (e.type == DioExceptionType.unknown &&
+        e.error is SocketException) {
       return 'Network error: Check your internet connection.';
     } else {
       return 'Unexpected error: ${e.message}';
     }
   }
 }
-
-// Import for SocketException (for network error detection)
-import 'dart:io' show SocketException;

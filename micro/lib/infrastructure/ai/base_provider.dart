@@ -13,7 +13,7 @@
 library;
 
 import 'dart:async';
-import '../models/api_stream.dart';
+import 'package:micro/domain/models/api_stream.dart';
 
 /// Model capability metadata - gates provider-specific params and pricing.
 /// This is the contract between provider handlers and the UI/task layer.

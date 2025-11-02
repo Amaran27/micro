@@ -92,6 +92,7 @@ class ChatMessage {
     required String content,
     String? userId,
     Map<String, dynamic>? metadata,
+    UserIntent? recognizedIntent,
     String? replyToId,
   }) {
     return ChatMessage(
@@ -102,6 +103,7 @@ class ChatMessage {
       status: MessageStatus.sent,
       userId: userId,
       metadata: metadata ?? {},
+      recognizedIntent: recognizedIntent,
       replyToId: replyToId,
     );
   }
@@ -119,6 +121,46 @@ class ChatMessage {
       content: content,
       status: MessageStatus.sent,
       metadata: metadata ?? {},
+    );
+  }
+
+  /// Create a tool execution message
+  factory ChatMessage.toolExecution({
+    required String id,
+    required String content,
+    required ToolResult toolResult,
+    Map<String, dynamic>? metadata,
+    String? replyToId,
+  }) {
+    return ChatMessage(
+      id: id,
+      timestamp: DateTime.now(),
+      type: MessageType.toolExecution,
+      content: content,
+      status: MessageStatus.sent,
+      metadata: metadata ?? {},
+      toolResult: toolResult,
+      replyToId: replyToId,
+    );
+  }
+
+  /// Create an autonomous action message
+  factory ChatMessage.autonomousAction({
+    required String id,
+    required String content,
+    required AutonomousAction action,
+    Map<String, dynamic>? metadata,
+    String? replyToId,
+  }) {
+    return ChatMessage(
+      id: id,
+      timestamp: DateTime.now(),
+      type: MessageType.autonomousAction,
+      content: content,
+      status: MessageStatus.sent,
+      metadata: metadata ?? {},
+      autonomousAction: action,
+      replyToId: replyToId,
     );
   }
 
@@ -167,6 +209,9 @@ class ChatMessage {
       status: MessageStatus.sent,
       userId: userId,
       metadata: metadata,
+      recognizedIntent: recognizedIntent,
+      autonomousAction: autonomousAction,
+      toolResult: toolResult,
       attachments: attachments,
       isEdited: isEdited,
       editedAt: editedAt,
@@ -185,6 +230,9 @@ class ChatMessage {
       status: MessageStatus.failed,
       userId: userId,
       metadata: metadata,
+      recognizedIntent: recognizedIntent,
+      autonomousAction: autonomousAction,
+      toolResult: toolResult,
       attachments: attachments,
       isEdited: isEdited,
       editedAt: editedAt,
@@ -203,6 +251,9 @@ class ChatMessage {
       status: MessageStatus.delivered,
       userId: userId,
       metadata: metadata,
+      recognizedIntent: recognizedIntent,
+      autonomousAction: autonomousAction,
+      toolResult: toolResult,
       attachments: attachments,
       isEdited: isEdited,
       editedAt: editedAt,
@@ -226,6 +277,9 @@ class ChatMessage {
       status: MessageStatus.read,
       userId: userId,
       metadata: metadata,
+      recognizedIntent: recognizedIntent,
+      autonomousAction: autonomousAction,
+      toolResult: toolResult,
       attachments: attachments,
       isEdited: isEdited,
       editedAt: editedAt,
@@ -244,6 +298,9 @@ class ChatMessage {
       status: status,
       userId: userId,
       metadata: metadata,
+      recognizedIntent: recognizedIntent,
+      autonomousAction: autonomousAction,
+      toolResult: toolResult,
       attachments: attachments,
       isEdited: true,
       editedAt: DateTime.now(),
@@ -260,6 +317,12 @@ class ChatMessage {
 
   /// Check if message is a system message
   bool get isSystemMessage => type == MessageType.system;
+
+  /// Check if message is a tool execution
+  bool get isToolExecution => type == MessageType.toolExecution;
+
+  /// Check if message is an autonomous action
+  bool get isAutonomousAction => type == MessageType.autonomousAction;
 
   /// Check if message is an error
   bool get isErrorMessage => type == MessageType.error;
@@ -292,6 +355,9 @@ class ChatMessage {
       'status': status.name,
       'userId': userId,
       'metadata': metadata,
+      'recognizedIntent': recognizedIntent?.toJson(),
+      'autonomousAction': autonomousAction?.toJson(),
+      'toolResult': toolResult?.toJson(),
       'attachments': attachments,
       'isEdited': isEdited,
       'editedAt': editedAt?.toIso8601String(),
@@ -316,6 +382,15 @@ class ChatMessage {
       ),
       userId: json['userId'],
       metadata: Map<String, dynamic>.from(json['metadata'] ?? {}),
+      recognizedIntent: json['recognizedIntent'] != null
+          ? UserIntent.fromJson(json['recognizedIntent'])
+          : null,
+      autonomousAction: json['autonomousAction'] != null
+          ? AutonomousAction.fromJson(json['autonomousAction'])
+          : null,
+      toolResult: json['toolResult'] != null
+          ? ToolResult.fromJson(json['toolResult'])
+          : null,
       attachments: List<String>.from(json['attachments'] ?? []),
       isEdited: json['isEdited'] ?? false,
       editedAt:

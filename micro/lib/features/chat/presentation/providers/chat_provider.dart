@@ -12,7 +12,6 @@ import 'package:micro/features/chat/data/sources/llm_data_source.dart';
 import 'package:micro/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:micro/features/chat/domain/utils/chat_message_converter.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
-import 'package:micro/presentation/providers/ai_providers.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
 import 'package:micro/infrastructure/ai/provider_config_model.dart';
 
@@ -83,39 +82,35 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     try {
-      // Get the current selected model
-      // Get the current selected model
-      final currentModelIdAsync = _ref.read(currentSelectedModelProvider);
-      // Wait for the AsyncValue to be ready and extract the value
-      final currentModelId = currentModelIdAsync.when(
-        data: (value) {
-          print('DEBUG: currentSelectedModelProvider returned: $value');
-          return value;
-        },
-        loading: () {
-          print('DEBUG: currentSelectedModelProvider is loading');
-          return null;
-        },
-        error: (error, stack) {
-          print('DEBUG: currentSelectedModelProvider error: $error');
-          return null;
-        },
-      );
-
-      print('DEBUG: Final currentModelId: $currentModelId');
+      // Use active models from provider config instead of deleted model_selection_notifier
+      final currentModelId = null; // No specific model selected yet
+      print('DEBUG: Using active models from provider config');
 
       ProviderAdapter? adapter;
 
-      // If no specific model is selected, try to get the active model for each provider
-      if (currentModelId == null) {
-        final activeModels = _aiProviderConfig.getAllActiveModels();
-        print('DEBUG: Active models: $activeModels');
+      // Try to get the active model for each provider
+      final activeModels = _aiProviderConfig.getAllActiveModels();
+      print('DEBUG: Active models: $activeModels');
 
-        // Check if ZhipuAI has an active model
-        final zhipuaiModel = activeModels['zhipu-ai'];
-        if (zhipuaiModel != null) {
-          adapter = _aiProviderConfig.getProvider('zhipu-ai');
-          print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
+      // Check if ZhipuAI has an active model
+      final zhipuaiModel = activeModels['zhipu-ai'];
+      if (zhipuaiModel != null) {
+        adapter = _aiProviderConfig.getProvider('zhipu-ai');
+        print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
+      }
+
+      // If no ZhipuAI model, try other providers
+      if (adapter == null) {
+        for (final entry in activeModels.entries) {
+          final providerId = entry.key;
+          final modelId = entry.value;
+          print('DEBUG: Trying provider: $providerId with model: $modelId');
+
+          adapter = _aiProviderConfig.getProvider(providerId);
+          if (adapter != null) {
+            print('DEBUG: Using provider: $providerId');
+            break;
+          }
         }
       }
 

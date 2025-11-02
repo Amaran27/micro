@@ -13,7 +13,7 @@ import 'infrastructure/permissions/services/runtime_permission_requester.dart';
 import 'infrastructure/permissions/services/permission_auditor.dart';
 import 'infrastructure/ai/ai_provider_config.dart';
 import 'infrastructure/ai/model_selection_service.dart';
-import 'infrastructure/ai/model_selection_notifier.dart';
+// Model selection is now handled via ProviderRegistry (LangChain-based)
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +47,6 @@ Future<void> main() async {
         sharedPreferencesProvider.overrideWithValue(prefs),
         permissionsManagerProvider.overrideWithValue(permissionsManager),
         aiProviderConfigProvider.overrideWithValue(aiProviderConfig),
-        modelSelectionServiceProvider.overrideWithValue(modelSelectionService),
       ],
       child: const MicroApp(),
     ),
@@ -59,8 +58,7 @@ class MicroApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Initialize ModelSelectionService by watching the provider
-    ref.watch(initializedModelSelectionServiceProvider);
+    // Model selection is now handled via ProviderRegistry (LangChain-based)
 
     // For now, using default theme and router
     final appRouter = AppRouter.router;

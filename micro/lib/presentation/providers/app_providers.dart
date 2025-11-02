@@ -1,5 +1,5 @@
-// Re-export AI providers for convenience
-export 'ai_providers.dart';
+// Re-export providers for convenience
+// Note: ai_providers.dart was removed as dead code (no active references)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';

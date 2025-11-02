@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
 import 'package:micro/features/chat/presentation/providers/chat_provider.dart';
 import 'package:micro/presentation/providers/app_providers.dart';
-import 'package:micro/infrastructure/ai/model_selection_notifier.dart';
+import 'package:micro/infrastructure/ai/provider_registry.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
 
 /// Enhanced AI Chat Page with Markdown Support
@@ -80,38 +80,14 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
   void _loadInitialModel() async {
     try {
-      // Get the current model using the new provider
-      final currentModelAsync = ref.read(currentSelectedModelProvider);
-      // Wait for the AsyncValue to be ready and extract the value
-      final currentModel = currentModelAsync.when(
-        data: (value) {
-          print('DEBUG: UI _loadInitialModel got model: $value');
-          return value;
-        },
-        loading: () {
-          print('DEBUG: UI _loadInitialModel loading');
-          return null;
-        },
-        error: (error, stack) {
-          print('DEBUG: UI _loadInitialModel error: $error');
-          return null;
-        },
-      );
-
-      if (currentModel != null) {
-        print('DEBUG: UI setting current model to: $currentModel');
-        setState(() {
-          _currentModelId = currentModel;
-          _currentModel = _formatModelName(currentModel);
-        });
-      } else {
-        // No model selected yet, show a placeholder
-        print('DEBUG: UI no model selected, showing placeholder');
-        setState(() {
-          _currentModelId = null;
-          _currentModel = 'Select a model';
-        });
-      }
+      // Get the current model from chat provider state
+      final chatState = ref.read(chatProvider);
+      // The chat provider handles model selection internally
+      // Just initialize the UI placeholder for now
+      setState(() {
+        _currentModelId = null;
+        _currentModel = 'Select a model';
+      });
     } catch (e) {
       print('DEBUG: UI error loading model: $e');
       setState(() {
@@ -222,33 +198,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(chatProvider);
-
-    // Update current model when provider changes
-    ref.listen<AsyncValue<String?>>(currentSelectedModelProvider,
-        (previous, next) {
-      final nextValue = next.when(
-        data: (value) {
-          print('DEBUG: UI currentSelectedModelProvider update: $value');
-          return value;
-        },
-        loading: () {
-          print('DEBUG: UI currentSelectedModelProvider loading');
-          return null;
-        },
-        error: (error, stack) {
-          print('DEBUG: UI currentSelectedModelProvider error: $error');
-          return null;
-        },
-      );
-      if (nextValue != null && nextValue != _currentModelId) {
-        print(
-            'DEBUG: UI updating current model from $_currentModelId to $nextValue');
-        setState(() {
-          _currentModelId = nextValue;
-          _currentModel = _formatModelName(nextValue);
-        });
-      }
-    });
 
     // Listen for changes in the chat state and update the UI
     ref.listen<ChatState>(chatProvider, (previous, next) {
@@ -848,17 +797,18 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
       ref.read(enabledProviderConfigsProvider.future).then((configs) {
         _dismissLoadingDialog(context);
 
-        // Get model selection service to fetch available models
-        final modelService = ref.read(modelSelectionServiceProvider);
-
-        // Build a map of provider -> models (prefer favorites when present)
+        // Get models from provider configs (use favorites or defaults from registry)
+        final registry = ProviderRegistry();
         final allModels = <String, List<String>>{};
         for (final config in configs) {
-          final availableModels =
-              modelService.getAvailableModels(config.providerId);
+          final metadata = registry.getProvider(config.providerId);
           final favorites = config.favoriteModels;
-          // Show only selected favorites when present, otherwise show available
-          final models = favorites.isNotEmpty ? favorites : availableModels;
+          final customModels = config.customModels;
+          // Show selected favorites when present, otherwise use defaults + custom
+          final models = favorites.isNotEmpty
+              ? favorites
+              : (List<String>.from(metadata?.defaultModels ?? [])
+                ..addAll(customModels));
 
           if (models.isNotEmpty) {
             allModels[config.providerId] = models;
@@ -915,17 +865,18 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
     enabledConfigsAsync.when(
       data: (configs) {
-        // Get model selection service to fetch available models
-        final modelService = ref.read(modelSelectionServiceProvider);
-
-        // Build a map of provider -> models (prefer favorites when present)
+        // Get models from provider configs (use favorites or defaults from registry)
+        final registry = ProviderRegistry();
         final allModels = <String, List<String>>{};
         for (final config in configs) {
-          final availableModels =
-              modelService.getAvailableModels(config.providerId);
+          final metadata = registry.getProvider(config.providerId);
           final favorites = config.favoriteModels;
-          // Show only selected favorites when present, otherwise show available
-          final models = favorites.isNotEmpty ? favorites : availableModels;
+          final customModels = config.customModels;
+          // Show selected favorites when present, otherwise use defaults + custom
+          final models = favorites.isNotEmpty
+              ? favorites
+              : (List<String>.from(metadata?.defaultModels ?? [])
+                ..addAll(customModels));
 
           if (models.isNotEmpty) {
             allModels[config.providerId] = models;
@@ -1056,14 +1007,9 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                                 // Close the sheet using its own context
                                 Navigator.pop(context);
 
-                                // Update the active model in ModelSelectionService
+                                // The chat provider handles model selection internally
                                 try {
-                                  final modelService =
-                                      ref.read(modelSelectionServiceProvider);
-                                  await modelService.setActiveModel(
-                                      providerId, model);
-
-                                  // Save the last selected model
+                                  // Save the last selected model in preferences
                                   final prefs =
                                       ref.read(sharedPreferencesProvider);
                                   await prefs.setString(

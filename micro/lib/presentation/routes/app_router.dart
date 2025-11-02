@@ -5,7 +5,6 @@ import '../../core/constants.dart';
 import '../../config/app_config.dart';
 import '../pages/enhanced_ai_chat_page.dart';
 import '../pages/dashboard_page.dart';
-import '../widgets/simple_tools_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/workflows_page.dart';
 import '../pages/onboarding_page.dart';
@@ -45,12 +44,12 @@ class AppRouter {
             builder: (context, state) => const EnhancedAIChatPage(),
           ),
 
-          // Tools
-          GoRoute(
-            path: RouteConstants.tools,
-            name: 'tools',
-            builder: (context, state) => const SimpleToolsPage(),
-          ),
+          // Tools - Temporarily disabled (dead code)
+          // GoRoute(
+          //   path: RouteConstants.tools,
+          //   name: 'tools',
+          //   builder: (context, state) => const SimpleToolsPage(),
+          // ),
 
           // Workflows
           GoRoute(

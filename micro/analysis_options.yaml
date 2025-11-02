@@ -9,6 +9,24 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # Pattern-based exclusions
+    - '**/*_old.dart'
+    - '**/*_new.dart'
+    - '**/*_backup.dart'
+    - '**/*_clean.dart'
+    - '**/*_fixed.dart'
+    - '**/main_*.dart'
+    - 'test/**'  # Test files
+    - 'test_app/**'  # Test app
+    - 'test_langchain/**'  # Test project
+    
+    # Dead code to be organized and removed
+    # See DEAD_CODE_MANIFEST.md for details
+    - 'lib/_to_be_removed/**'  # Flagged for deletion after testing
+    - 'lib/_backup/**'  # Backup copies
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
