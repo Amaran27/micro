@@ -6,7 +6,7 @@ part of 'agent_models.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_PlanStep _$PlanStepFromJson(Map<String, dynamic> json) => _PlanStep(
+PlanStep _$PlanStepFromJson(Map<String, dynamic> json) => PlanStep(
       id: json['id'] as String,
       description: json['description'] as String,
       action: json['action'] as String,
@@ -26,7 +26,7 @@ _PlanStep _$PlanStepFromJson(Map<String, dynamic> json) => _PlanStep(
       toolName: json['toolName'] as String?,
     );
 
-Map<String, dynamic> _$PlanStepToJson(_PlanStep instance) => <String, dynamic>{
+Map<String, dynamic> _$PlanStepToJson(PlanStep instance) => <String, dynamic>{
       'id': instance.id,
       'description': instance.description,
       'action': instance.action,
@@ -50,7 +50,7 @@ const _$ExecutionStatusEnumMap = {
   ExecutionStatus.cancelled: 'cancelled',
 };
 
-_StepResult _$StepResultFromJson(Map<String, dynamic> json) => _StepResult(
+StepResult _$StepResultFromJson(Map<String, dynamic> json) => StepResult(
       stepId: json['stepId'] as String,
       status: $enumDecode(_$ExecutionStatusEnumMap, json['status']),
       result: json['result'],
@@ -62,7 +62,7 @@ _StepResult _$StepResultFromJson(Map<String, dynamic> json) => _StepResult(
       metadata: json['metadata'] as Map<String, dynamic>? ?? const {},
     );
 
-Map<String, dynamic> _$StepResultToJson(_StepResult instance) =>
+Map<String, dynamic> _$StepResultToJson(StepResult instance) =>
     <String, dynamic>{
       'stepId': instance.stepId,
       'status': _$ExecutionStatusEnumMap[instance.status]!,
@@ -73,8 +73,7 @@ Map<String, dynamic> _$StepResultToJson(_StepResult instance) =>
       'metadata': instance.metadata,
     };
 
-_Verification _$VerificationFromJson(Map<String, dynamic> json) =>
-    _Verification(
+Verification _$VerificationFromJson(Map<String, dynamic> json) => Verification(
       stepId: json['stepId'] as String,
       result: $enumDecode(_$VerificationResultEnumMap, json['result']),
       reasoning: json['reasoning'] as String,
@@ -88,7 +87,7 @@ _Verification _$VerificationFromJson(Map<String, dynamic> json) =>
       evidence: json['evidence'] as Map<String, dynamic>? ?? const {},
     );
 
-Map<String, dynamic> _$VerificationToJson(_Verification instance) =>
+Map<String, dynamic> _$VerificationToJson(Verification instance) =>
     <String, dynamic>{
       'stepId': instance.stepId,
       'result': _$VerificationResultEnumMap[instance.result]!,
@@ -105,7 +104,7 @@ const _$VerificationResultEnumMap = {
   VerificationResult.needsReplanning: 'needsReplanning',
 };
 
-_AgentPlan _$AgentPlanFromJson(Map<String, dynamic> json) => _AgentPlan(
+AgentPlan _$AgentPlanFromJson(Map<String, dynamic> json) => AgentPlan(
       id: json['id'] as String,
       taskDescription: json['taskDescription'] as String,
       steps: (json['steps'] as List<dynamic>)
@@ -134,8 +133,7 @@ _AgentPlan _$AgentPlanFromJson(Map<String, dynamic> json) => _AgentPlan(
       finalReasoning: json['finalReasoning'] as String?,
     );
 
-Map<String, dynamic> _$AgentPlanToJson(_AgentPlan instance) =>
-    <String, dynamic>{
+Map<String, dynamic> _$AgentPlanToJson(AgentPlan instance) => <String, dynamic>{
       'id': instance.id,
       'taskDescription': instance.taskDescription,
       'steps': instance.steps,
@@ -149,7 +147,7 @@ Map<String, dynamic> _$AgentPlanToJson(_AgentPlan instance) =>
       'finalReasoning': instance.finalReasoning,
     };
 
-_AgentResult _$AgentResultFromJson(Map<String, dynamic> json) => _AgentResult(
+AgentResult _$AgentResultFromJson(Map<String, dynamic> json) => AgentResult(
       planId: json['planId'] as String,
       finalStatus: $enumDecode(_$ExecutionStatusEnumMap, json['finalStatus']),
       result: json['result'],
@@ -163,7 +161,7 @@ _AgentResult _$AgentResultFromJson(Map<String, dynamic> json) => _AgentResult(
       metadata: json['metadata'] as Map<String, dynamic>? ?? const {},
     );
 
-Map<String, dynamic> _$AgentResultToJson(_AgentResult instance) =>
+Map<String, dynamic> _$AgentResultToJson(AgentResult instance) =>
     <String, dynamic>{
       'planId': instance.planId,
       'finalStatus': _$ExecutionStatusEnumMap[instance.finalStatus]!,
@@ -176,8 +174,7 @@ Map<String, dynamic> _$AgentResultToJson(_AgentResult instance) =>
       'metadata': instance.metadata,
     };
 
-_ToolMetadata _$ToolMetadataFromJson(Map<String, dynamic> json) =>
-    _ToolMetadata(
+ToolMetadata _$ToolMetadataFromJson(Map<String, dynamic> json) => ToolMetadata(
       name: json['name'] as String,
       description: json['description'] as String,
       capabilities: (json['capabilities'] as List<dynamic>)
@@ -194,7 +191,7 @@ _ToolMetadata _$ToolMetadataFromJson(Map<String, dynamic> json) =>
           : Duration(microseconds: (json['timeout'] as num).toInt()),
     );
 
-Map<String, dynamic> _$ToolMetadataToJson(_ToolMetadata instance) =>
+Map<String, dynamic> _$ToolMetadataToJson(ToolMetadata instance) =>
     <String, dynamic>{
       'name': instance.name,
       'description': instance.description,
@@ -206,8 +203,8 @@ Map<String, dynamic> _$ToolMetadataToJson(_ToolMetadata instance) =>
       'timeout': instance.timeout?.inMicroseconds,
     };
 
-_TaskCapabilities _$TaskCapabilitiesFromJson(Map<String, dynamic> json) =>
-    _TaskCapabilities(
+TaskCapabilities _$TaskCapabilitiesFromJson(Map<String, dynamic> json) =>
+    TaskCapabilities(
       requiredTools: (json['requiredTools'] as List<dynamic>)
           .map((e) => e as String)
           .toList(),
@@ -220,7 +217,7 @@ _TaskCapabilities _$TaskCapabilitiesFromJson(Map<String, dynamic> json) =>
           json['estimatedResources'] as Map<String, dynamic>? ?? const {},
     );
 
-Map<String, dynamic> _$TaskCapabilitiesToJson(_TaskCapabilities instance) =>
+Map<String, dynamic> _$TaskCapabilitiesToJson(TaskCapabilities instance) =>
     <String, dynamic>{
       'requiredTools': instance.requiredTools,
       'requiredPermissions': instance.requiredPermissions,
@@ -228,8 +225,8 @@ Map<String, dynamic> _$TaskCapabilitiesToJson(_TaskCapabilities instance) =>
       'estimatedResources': instance.estimatedResources,
     };
 
-_PlanningContext _$PlanningContextFromJson(Map<String, dynamic> json) =>
-    _PlanningContext(
+PlanningContext _$PlanningContextFromJson(Map<String, dynamic> json) =>
+    PlanningContext(
       taskDescription: json['taskDescription'] as String,
       availableTools: (json['availableTools'] as List<dynamic>)
           .map((e) => ToolMetadata.fromJson(e as Map<String, dynamic>))
@@ -245,7 +242,7 @@ _PlanningContext _$PlanningContextFromJson(Map<String, dynamic> json) =>
       constraints: json['constraints'] as Map<String, dynamic>? ?? const {},
     );
 
-Map<String, dynamic> _$PlanningContextToJson(_PlanningContext instance) =>
+Map<String, dynamic> _$PlanningContextToJson(PlanningContext instance) =>
     <String, dynamic>{
       'taskDescription': instance.taskDescription,
       'availableTools': instance.availableTools,
@@ -255,8 +252,7 @@ Map<String, dynamic> _$PlanningContextToJson(_PlanningContext instance) =>
       'constraints': instance.constraints,
     };
 
-_TaskAnalysis _$TaskAnalysisFromJson(Map<String, dynamic> json) =>
-    _TaskAnalysis(
+TaskAnalysis _$TaskAnalysisFromJson(Map<String, dynamic> json) => TaskAnalysis(
       taskDescription: json['taskDescription'] as String,
       estimatedComplexity: (json['estimatedComplexity'] as num).toInt(),
       requiredCapabilities: (json['requiredCapabilities'] as List<dynamic>)
@@ -266,7 +262,7 @@ _TaskAnalysis _$TaskAnalysisFromJson(Map<String, dynamic> json) =>
       reasoning: json['reasoning'] as String,
     );
 
-Map<String, dynamic> _$TaskAnalysisToJson(_TaskAnalysis instance) =>
+Map<String, dynamic> _$TaskAnalysisToJson(TaskAnalysis instance) =>
     <String, dynamic>{
       'taskDescription': instance.taskDescription,
       'estimatedComplexity': instance.estimatedComplexity,

@@ -27,13 +27,15 @@ void main() {
     toolRegistry.register(SensorAccessTool(logger: logger));
     toolRegistry.register(FileOperationTool(logger: logger));
     toolRegistry.register(AppNavigationTool(logger: logger));
+    toolRegistry.register(LocationTool(logger: logger));
   });
 
   group('ToolRegistry Tests', () {
     test('can register and retrieve tools', () {
-      expect(toolRegistry.toolCount, equals(4));
+      expect(toolRegistry.toolCount, equals(5));
       expect(toolRegistry.getTool('ui_validation'), isNotNull);
       expect(toolRegistry.getTool('sensor_access'), isNotNull);
+      expect(toolRegistry.getTool('location_access'), isNotNull);
     });
 
     test('can find tools by capability', () {
@@ -210,7 +212,7 @@ void main() {
         logger: logger,
       );
       expect(factory, isNotNull);
-      expect(factory.toolRegistry.toolCount, equals(4));
+      expect(factory.toolRegistry.toolCount, equals(5));
     });
 
     test('can get planning context', () {
@@ -221,7 +223,7 @@ void main() {
       );
       final context = factory.getPlanningContext('Test task');
       expect(context.taskDescription, equals('Test task'));
-      expect(context.availableTools.length, equals(4));
+      expect(context.availableTools.length, equals(5));
     });
   });
 }
