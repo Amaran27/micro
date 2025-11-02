@@ -12,7 +12,7 @@ import 'package:micro/infrastructure/ai/agent/tools/example_mobile_tools.dart';
 // Mock implementations for testing
 class MockLanguageModel extends Mock implements LanguageModel {}
 
-class MockChatModel extends Mock implements BaseChatModel {}
+class MockChatModel extends Mock implements ChatModel {}
 
 void main() {
   late ToolRegistry toolRegistry;
