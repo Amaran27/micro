@@ -75,6 +75,32 @@ class HttpAgentClient {
     }
   }
 
+  /// Submit a task with multi-agent coordination (Phase 3)
+  Future<AgentTaskResponse> submitMultiAgentTask(AgentTaskRequest request) async {
+    try {
+      _logger.info('Submitting multi-agent task: ${request.task}');
+      final response = await _dio.post('/api/v1/agent/multi-agent/task', data: request.toJson());
+      final taskResponse = AgentTaskResponse.fromJson(response.data);
+      _logger.info('Multi-agent task submitted: ${taskResponse.taskId}');
+      return taskResponse;
+    } on DioException catch (e) {
+      _logger.error('Failed to submit multi-agent task: ${e.message}');
+      throw Exception('Failed to submit multi-agent task: ${_mapDioError(e)}');
+    }
+  }
+
+  /// Get multi-agent system information (Phase 3)
+  Future<Map<String, dynamic>> getMultiAgentInfo() async {
+    try {
+      _logger.info('Fetching multi-agent system info');
+      final response = await _dio.get('/api/v1/agent/multi-agent/info');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      _logger.error('Failed to get multi-agent info: ${e.message}');
+      throw Exception('Failed to get multi-agent info: ${_mapDioError(e)}');
+    }
+  }
+
   /// Health check
   Future<bool> healthCheck() async {
     try {
