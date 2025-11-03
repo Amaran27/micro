@@ -11,6 +11,7 @@ import '../pages/onboarding_page.dart';
 import '../pages/unified_provider_settings.dart';
 import '../providers/app_providers.dart';
 import '../pages/agent_dashboard_page.dart';
+import '../../features/mcp/presentation/pages/mcp_server_settings_page.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -69,6 +70,12 @@ class AppRouter {
                 path: 'providers',
                 name: 'providers',
                 builder: (context, state) => const UnifiedProviderSettings(),
+              ),
+              // MCP Servers
+              GoRoute(
+                path: 'mcp',
+                name: 'mcp',
+                builder: (context, state) => const MCPServerSettingsPage(),
               ),
             ],
           ),

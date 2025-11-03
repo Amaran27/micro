@@ -462,7 +462,7 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
                       label: const Text('Next'),
                       icon: const Icon(Icons.arrow_forward),
                     ),
-                  if (_currentStep == 3)
+                  if (_currentStep == 4)
                     ElevatedButton.icon(
                       onPressed: _saveConfiguration,
                       label: const Text('Save Changes'),
