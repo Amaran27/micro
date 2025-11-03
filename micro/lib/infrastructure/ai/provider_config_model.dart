@@ -20,6 +20,10 @@ class ProviderConfig {
   final Map<String, dynamic>? additionalSettings;
   final DateTime createdAt;
   final DateTime? lastTestedAt;
+  
+  // MCP Integration Settings
+  final bool mcpEnabled; // Enable MCP tool integration for this provider
+  final List<String> mcpServerIds; // MCP servers assigned to this provider
 
   ProviderConfig({
     String? id,
@@ -35,6 +39,8 @@ class ProviderConfig {
     this.additionalSettings,
     DateTime? createdAt,
     this.lastTestedAt,
+    this.mcpEnabled = false,
+    this.mcpServerIds = const [],
   })  : id = id ?? '$providerId-${DateTime.now().millisecondsSinceEpoch}',
         createdAt = createdAt ?? DateTime.now();
 
@@ -53,6 +59,8 @@ class ProviderConfig {
     Map<String, dynamic>? additionalSettings,
     DateTime? createdAt,
     DateTime? lastTestedAt,
+    bool? mcpEnabled,
+    List<String>? mcpServerIds,
   }) {
     return ProviderConfig(
       id: id ?? this.id,
@@ -68,6 +76,8 @@ class ProviderConfig {
       additionalSettings: additionalSettings ?? this.additionalSettings,
       createdAt: createdAt ?? this.createdAt,
       lastTestedAt: lastTestedAt ?? this.lastTestedAt,
+      mcpEnabled: mcpEnabled ?? this.mcpEnabled,
+      mcpServerIds: mcpServerIds ?? this.mcpServerIds,
     );
   }
 
@@ -87,6 +97,8 @@ class ProviderConfig {
       'additionalSettings': additionalSettings,
       'createdAt': createdAt.toIso8601String(),
       'lastTestedAt': lastTestedAt?.toIso8601String(),
+      'mcpEnabled': mcpEnabled,
+      'mcpServerIds': mcpServerIds,
     };
   }
 
@@ -110,6 +122,8 @@ class ProviderConfig {
       lastTestedAt: json['lastTestedAt'] != null
           ? DateTime.parse(json['lastTestedAt'] as String)
           : null,
+      mcpEnabled: json['mcpEnabled'] as bool? ?? false,
+      mcpServerIds: List<String>.from(json['mcpServerIds'] as List? ?? []),
     );
   }
 
