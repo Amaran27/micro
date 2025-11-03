@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
 import 'package:micro/infrastructure/ai/agent/agent_providers.dart';
+import 'package:micro/infrastructure/ai/mcp/mcp_providers.dart';
+import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
 
 /// Dialog for creating new autonomous agents
 class AgentCreationDialog extends ConsumerStatefulWidget {
@@ -30,6 +32,10 @@ class _AgentCreationDialogState extends ConsumerState<AgentCreationDialog> {
   bool _enableReasoning = true;
   bool _enableCollaboration = false;
   final List<String> _selectedTools = [];
+  
+  // MCP Integration
+  bool _enableMCP = false;
+  final List<String> _selectedMCPServers = [];
 
   bool _showAdvanced = false;
   bool _isLoading = false;
@@ -97,6 +103,8 @@ class _AgentCreationDialogState extends ConsumerState<AgentCreationDialog> {
                       _buildAdvancedSettings(),
                       const SizedBox(height: 24),
                       _buildToolSelection(),
+                      const SizedBox(height: 24),
+                      _buildMCPConfiguration(),
                       const SizedBox(height: 24),
                     ],
                     _buildActions(),
@@ -314,6 +322,193 @@ class _AgentCreationDialogState extends ConsumerState<AgentCreationDialog> {
             ),
         };
       },
+    );
+  }
+
+  Widget _buildMCPConfiguration() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.dns, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'MCP Integration',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Enable Model Context Protocol to extend agent with additional tools',
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 16),
+        SwitchListTile(
+          title: const Text('Enable MCP Tools'),
+          subtitle: const Text('Allow agent to use tools from MCP servers'),
+          value: _enableMCP,
+          onChanged: (value) => setState(() => _enableMCP = value),
+          contentPadding: EdgeInsets.zero,
+        ),
+        if (_enableMCP) ...[
+          const SizedBox(height: 16),
+          const Text(
+            'Select MCP Servers:',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Consumer(
+            builder: (context, ref, child) {
+              final serverConfigsAsync = ref.watch(mcpServerConfigsProvider);
+              final serverStatesAsync = ref.watch(mcpServerStatesProvider);
+
+              return serverConfigsAsync.when(
+                loading: () => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                error: (error, stack) => Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Error loading MCP servers: $error',
+                          style: const TextStyle(color: Colors.red, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                data: (configs) {
+                  if (configs.isEmpty) {
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.warning, color: Colors.orange),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'No MCP servers configured',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Configure MCP servers in Settings',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return serverStatesAsync.when(
+                    loading: () => _buildServerCheckboxes(configs, []),
+                    error: (error, stack) => _buildServerCheckboxes(configs, []),
+                    data: (states) => _buildServerCheckboxes(configs, states),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildServerCheckboxes(
+    List<MCPServerConfig> configs,
+    List<MCPServerState> states,
+  ) {
+    return Column(
+      children: configs.map((config) {
+        final state = states.firstWhere(
+          (s) => s.serverId == config.id,
+          orElse: () => MCPServerState(
+            serverId: config.id,
+            status: MCPConnectionStatus.disconnected,
+          ),
+        );
+
+        final isSelected = _selectedMCPServers.contains(config.id);
+        final isConnected = state.status == MCPConnectionStatus.connected;
+
+        return CheckboxListTile(
+          title: Text(config.name),
+          subtitle: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isConnected
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  isConnected ? 'Connected' : 'Disconnected',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isConnected ? Colors.green : Colors.grey,
+                  ),
+                ),
+              ),
+              if (state.availableTools.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${state.availableTools.length} tools',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.purple,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          value: isSelected,
+          onChanged: (selected) {
+            setState(() {
+              if (selected == true) {
+                _selectedMCPServers.add(config.id);
+              } else {
+                _selectedMCPServers.remove(config.id);
+              }
+            });
+          },
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+        );
+      }).toList(),
     );
   }
 
