@@ -8,6 +8,10 @@ import 'package:micro/presentation/widgets/agent_status_widget.dart';
 import 'package:micro/presentation/widgets/agent_execution_widget.dart';
 import 'package:micro/presentation/widgets/agent_memory_widget.dart';
 import 'package:micro/presentation/widgets/agent_creation_dialog.dart';
+import 'package:micro/infrastructure/ai/mcp/mcp_providers.dart';
+import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
+import 'package:micro/features/mcp/presentation/widgets/mcp_server_status_widget.dart';
+import 'package:micro/features/mcp/presentation/widgets/mcp_activity_log_item.dart';
 
 /// Main dashboard page for autonomous agent management
 class AgentDashboardPage extends ConsumerStatefulWidget {
@@ -25,7 +29,7 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -88,6 +92,7 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
             Tab(text: 'Overview'),
             Tab(text: 'Execute'),
             Tab(text: 'Memory'),
+            Tab(text: 'MCP', icon: Icon(Icons.dns, size: 16)),
           ],
         ),
       ),
@@ -122,6 +127,7 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
               _buildOverviewTab(),
               _buildExecuteTab(),
               _buildMemoryTab(),
+              _buildMCPTab(),
             ],
           ),
         ),
@@ -624,6 +630,356 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMCPTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'MCP Integration',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Monitor and manage Model Context Protocol server connections',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+          ),
+          const SizedBox(height: 24),
+          _buildMCPConnectionsSection(),
+          const SizedBox(height: 24),
+          _buildMCPActivitySection(),
+          const SizedBox(height: 24),
+          _buildMCPStatisticsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMCPConnectionsSection() {
+    final serverConfigsAsync = ref.watch(mcpServerConfigsProvider);
+    final serverStatesAsync = ref.watch(mcpServerStatesProvider);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Connected Servers',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    // Navigate to MCP settings
+                    context.push('/settings/mcp');
+                  },
+                  icon: const Icon(Icons.settings, size: 16),
+                  label: const Text('Manage'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            serverConfigsAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24.0),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              error: (error, stack) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red),
+                      const SizedBox(height: 8),
+                      Text('Error: $error'),
+                    ],
+                  ),
+                ),
+              ),
+              data: (configs) {
+                if (configs.isEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          const Icon(Icons.dns_outlined,
+                              size: 48, color: Colors.grey),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No MCP servers configured',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Add MCP servers to extend agent capabilities',
+                            style: TextStyle(color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () => context.push('/settings/mcp'),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add MCP Server'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return serverStatesAsync.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) =>
+                      _buildServerList(configs, []),
+                  data: (states) => _buildServerList(configs, states),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServerList(
+    List<MCPServerConfig> configs,
+    List<MCPServerState> states,
+  ) {
+    return Column(
+      children: configs.map((config) {
+        final state = states.firstWhere(
+          (s) => s.serverId == config.id,
+          orElse: () => MCPServerState(
+            serverId: config.id,
+            status: MCPConnectionStatus.disconnected,
+          ),
+        );
+
+        return MCPServerStatusWidget(
+          config: config,
+          state: state,
+          onDisconnect: () async {
+            await ref.read(mcpOperationsProvider.notifier).disconnectServer(config.id);
+          },
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildMCPActivitySection() {
+    // Mock activity data for now - will be replaced with real data
+    final mockActivities = <MCPActivityLogEntry>[
+      MCPActivityLogEntry(
+        id: '1',
+        timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
+        serverName: 'Filesystem',
+        toolName: 'read_file',
+        status: MCPActivityStatus.success,
+        parameters: {'path': '/home/user/document.txt'},
+        result: 'File content here...',
+        durationMs: 125,
+      ),
+      MCPActivityLogEntry(
+        id: '2',
+        timestamp: DateTime.now().subtract(const Duration(minutes: 15)),
+        serverName: 'GitHub',
+        toolName: 'search_repos',
+        status: MCPActivityStatus.success,
+        parameters: {'query': 'flutter mcp'},
+        result: {'repos': ['repo1', 'repo2']},
+        durationMs: 523,
+      ),
+      MCPActivityLogEntry(
+        id: '3',
+        timestamp: DateTime.now().subtract(const Duration(hours: 1)),
+        serverName: 'Brave Search',
+        toolName: 'web_search',
+        status: MCPActivityStatus.failed,
+        parameters: {'query': 'test query'},
+        error: 'Connection timeout',
+        durationMs: 5000,
+      ),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Activity',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    // Clear activity log
+                  },
+                  icon: const Icon(Icons.clear_all, size: 16),
+                  label: const Text('Clear'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (mockActivities.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      const Icon(Icons.inbox_outlined,
+                          size: 48, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No activity yet',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Tool calls will appear here',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Column(
+                children: mockActivities
+                    .map((activity) => MCPActivityLogItem(entry: activity))
+                    .toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMCPStatisticsSection() {
+    // Mock statistics - will be replaced with real data
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Statistics',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    label: 'Total Tool Calls',
+                    value: '3',
+                    icon: Icons.build,
+                    color: Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    label: 'Success Rate',
+                    value: '67%',
+                    icon: Icons.check_circle,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    label: 'Avg Duration',
+                    value: '1.2s',
+                    icon: Icons.speed,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    label: 'Active Servers',
+                    value: '2',
+                    icon: Icons.dns,
+                    color: Colors.purple,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const Spacer(),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[700],
+            ),
+          ),
+        ],
       ),
     );
   }
