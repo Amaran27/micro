@@ -7,6 +7,7 @@ import 'package:micro/features/chat/presentation/providers/chat_provider.dart';
 import 'package:micro/presentation/providers/app_providers.dart';
 import 'package:micro/infrastructure/ai/provider_registry.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
+import 'package:micro/features/agent/providers/agent_execution_ui_provider.dart';
 
 /// Enhanced AI Chat Page with Markdown Support
 ///
@@ -80,8 +81,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
   void _loadInitialModel() async {
     try {
-      // Get the current model from chat provider state
-      final chatState = ref.read(chatProvider);
       // The chat provider handles model selection internally
       // Just initialize the UI placeholder for now
       setState(() {
@@ -670,19 +669,190 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
   /// Build agent execution tab
   Widget _buildAgentExecutionTab(WidgetRef ref) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.play_circle_outline, size: 48, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Agent Execution'),
-          Text(
-            'Monitor and control running agents',
-            style: TextStyle(color: Colors.grey),
+    final availableTools = ref.watch(availableToolsProvider);
+    final executionSteps = ref.watch(executionStepsProvider);
+    final isExecuting = ref.watch(executionStatusProvider);
+
+    // Filter out null tools
+    final validTools = availableTools.where((tool) => tool != null).toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Available Tools Section
+        Text(
+          'Available Tools (${validTools.length})',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        if (validTools.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text('No tools available'),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: validTools.map((tool) {
+              final toolName = (tool as dynamic)?.name?.toString() ?? 'Unknown';
+              final description = (tool as dynamic)?.description?.toString() ??
+                  'No description';
+              return Tooltip(
+                message: description,
+                child: Chip(
+                  avatar: Icon(
+                    _getToolIcon(toolName),
+                    size: 16,
+                  ),
+                  label: Text(toolName),
+                  onDeleted: null,
+                ),
+              );
+            }).toList(),
           ),
-        ],
-      ),
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 16),
+
+        // Execution Status Section
+        Row(
+          children: [
+            Text(
+              'Execution Status',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const Spacer(),
+            if (isExecuting)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Running',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                executionSteps.isEmpty ? 'Idle' : 'Complete',
+                style: TextStyle(
+                  color: executionSteps.isEmpty ? Colors.grey : Colors.green,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Execution Steps
+        if (executionSteps.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              'No execution history yet',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          )
+        else
+          ...executionSteps.map((step) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _getStepColor(step.status),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _getStepBorderColor(step.status),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _getStepIcon(step.status),
+                          size: 16,
+                          color: _getStepIconColor(step.status),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            step.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          step.status.toString().split('.').last.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: _getStepIconColor(step.status),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (step.details != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        step.details!,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                    if (step.result != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Result: ${step.result}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        const SizedBox(height: 12),
+        if (executionSteps.isNotEmpty)
+          ElevatedButton.icon(
+            onPressed: () {
+              ref
+                  .read(agentExecutionUIProvider.notifier)
+                  .clearExecutionHistory();
+            },
+            icon: const Icon(Icons.clear),
+            label: const Text('Clear History'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade100,
+              foregroundColor: Colors.red.shade900,
+            ),
+          ),
+      ],
     );
   }
 
@@ -1054,5 +1224,79 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
         );
       },
     );
+  }
+
+  /// Get icon for tool based on its name
+  IconData _getToolIcon(String toolName) {
+    switch (toolName.toLowerCase()) {
+      case 'ui_validation':
+        return Icons.widgets;
+      case 'sensor_access':
+        return Icons.sensors;
+      case 'file_operations':
+        return Icons.folder;
+      case 'app_navigation':
+        return Icons.map;
+      case 'location_access':
+        return Icons.location_on;
+      default:
+        return Icons.extension;
+    }
+  }
+
+  /// Get background color for execution step
+  Color _getStepColor(StepExecutionStatus status) {
+    switch (status) {
+      case StepExecutionStatus.pending:
+        return Colors.grey.shade100;
+      case StepExecutionStatus.running:
+        return Colors.orange.shade50;
+      case StepExecutionStatus.completed:
+        return Colors.green.shade50;
+      case StepExecutionStatus.failed:
+        return Colors.red.shade50;
+    }
+  }
+
+  /// Get border color for execution step
+  Color _getStepBorderColor(StepExecutionStatus status) {
+    switch (status) {
+      case StepExecutionStatus.pending:
+        return Colors.grey.shade300;
+      case StepExecutionStatus.running:
+        return Colors.orange.shade300;
+      case StepExecutionStatus.completed:
+        return Colors.green.shade300;
+      case StepExecutionStatus.failed:
+        return Colors.red.shade300;
+    }
+  }
+
+  /// Get icon for execution step status
+  IconData _getStepIcon(StepExecutionStatus status) {
+    switch (status) {
+      case StepExecutionStatus.pending:
+        return Icons.schedule;
+      case StepExecutionStatus.running:
+        return Icons.hourglass_bottom;
+      case StepExecutionStatus.completed:
+        return Icons.check_circle;
+      case StepExecutionStatus.failed:
+        return Icons.error;
+    }
+  }
+
+  /// Get icon color for execution step
+  Color _getStepIconColor(StepExecutionStatus status) {
+    switch (status) {
+      case StepExecutionStatus.pending:
+        return Colors.grey;
+      case StepExecutionStatus.running:
+        return Colors.orange;
+      case StepExecutionStatus.completed:
+        return Colors.green;
+      case StepExecutionStatus.failed:
+        return Colors.red;
+    }
   }
 }

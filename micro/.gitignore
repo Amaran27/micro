@@ -12,6 +12,13 @@
 .swiftpm/
 migrate_working_dir/
 
+# Analysis and build output files (stale analysis artifacts)
+analysis.txt
+analysis_final.txt
+final_analysis.txt
+final_clean.txt
+full_output.txt
+
 # IntelliJ related
 *.iml
 *.ipr

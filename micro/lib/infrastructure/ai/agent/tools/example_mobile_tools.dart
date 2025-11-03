@@ -25,7 +25,7 @@ abstract class BaseMobileTool implements AgentTool {
 
 /// Tool for validating UI elements and screenshots
 class UIValidationTool extends BaseMobileTool {
-  UIValidationTool({Logger? logger}) : super(logger: logger);
+  UIValidationTool({super.logger});
 
   @override
   ToolMetadata get metadata => ToolMetadata(
@@ -115,7 +115,7 @@ class UIValidationTool extends BaseMobileTool {
 
 /// Tool for accessing device sensors
 class SensorAccessTool extends BaseMobileTool {
-  SensorAccessTool({Logger? logger}) : super(logger: logger);
+  SensorAccessTool({super.logger});
 
   @override
   ToolMetadata get metadata => ToolMetadata(
@@ -177,7 +177,7 @@ class SensorAccessTool extends BaseMobileTool {
       default:
         return {
           'sensor': sensor,
-          'data': 'mock_data_for_${sensor}',
+          'data': 'mock_data_for_$sensor',
         };
     }
   }
@@ -185,7 +185,7 @@ class SensorAccessTool extends BaseMobileTool {
 
 /// Tool for file operations on the device
 class FileOperationTool extends BaseMobileTool {
-  FileOperationTool({Logger? logger}) : super(logger: logger);
+  FileOperationTool({super.logger});
 
   @override
   ToolMetadata get metadata => ToolMetadata(
@@ -269,7 +269,7 @@ class FileOperationTool extends BaseMobileTool {
 
 /// Tool for app navigation and interaction
 class AppNavigationTool extends BaseMobileTool {
-  AppNavigationTool({Logger? logger}) : super(logger: logger);
+  AppNavigationTool({super.logger});
 
   @override
   ToolMetadata get metadata => ToolMetadata(
@@ -355,5 +355,149 @@ class AppNavigationTool extends BaseMobileTool {
       'waitedMilliseconds': 500,
       'timestamp': DateTime.now().toIso8601String(),
     };
+  }
+}
+
+/// Tool for accessing device location services
+class LocationTool extends BaseMobileTool {
+  LocationTool({super.logger});
+
+  @override
+  ToolMetadata get metadata => ToolMetadata(
+        name: 'location_access',
+        description:
+            'Access device location: GPS coordinates, location tracking, geocoding',
+        capabilities: [
+          'location-access',
+          'gps-tracking',
+          'geocoding',
+          'location-history'
+        ],
+        requiredPermissions: ['location'],
+        executionContext: 'local',
+        parameters: {
+          'action': 'get_current|track_location|get_history|geocode',
+          'target': 'optional: coordinates or place name for geocoding',
+        },
+      );
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> parameters) async {
+    validateParameters(parameters);
+
+    final action = parameters['action'] as String?;
+    final target = parameters['target'] as String?;
+
+    logger.d('LocationTool executing: action=$action, target=$target');
+
+    switch (action) {
+      case 'get_current':
+        return await _getCurrentLocation();
+      case 'track_location':
+        return await _startLocationTracking();
+      case 'get_history':
+        return await _getLocationHistory();
+      case 'geocode':
+        return await _geocodePlace(target);
+      default:
+        throw ArgumentError('Unknown action: $action');
+    }
+  }
+
+  @override
+  bool canHandle(String action) => action.startsWith('location_');
+
+  @override
+  List<String> getRequiredParameters() => ['action'];
+
+  @override
+  List<String> getRequiredPermissions() => metadata.requiredPermissions;
+
+  /// Get current device location
+  Future<Map<String, dynamic>> _getCurrentLocation() async {
+    // Simulate GPS location retrieval
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    // Example: Cupertino, CA (Apple HQ)
+    return {
+      'latitude': 37.3382,
+      'longitude': -122.0093,
+      'accuracy': 10.5, // meters
+      'altitude': 45.0,
+      'speed': 0.0, // m/s
+      'timestamp': DateTime.now().toIso8601String(),
+      'provider': 'gps',
+    };
+  }
+
+  /// Start tracking device location
+  Future<Map<String, dynamic>> _startLocationTracking() async {
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    return {
+      'trackingId': 'track_${DateTime.now().millisecondsSinceEpoch}',
+      'status': 'tracking_started',
+      'updateInterval': 'continuous',
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+  }
+
+  /// Get location history
+  Future<List<Map<String, dynamic>>> _getLocationHistory() async {
+    // Simulate retrieving location history
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    final now = DateTime.now();
+    return [
+      {
+        'timestamp':
+            now.subtract(const Duration(minutes: 30)).toIso8601String(),
+        'latitude': 37.3382,
+        'longitude': -122.0093,
+        'accuracy': 15.0,
+      },
+      {
+        'timestamp':
+            now.subtract(const Duration(minutes: 20)).toIso8601String(),
+        'latitude': 37.3350,
+        'longitude': -122.0100,
+        'accuracy': 12.0,
+      },
+      {
+        'timestamp':
+            now.subtract(const Duration(minutes: 10)).toIso8601String(),
+        'latitude': 37.3360,
+        'longitude': -122.0080,
+        'accuracy': 11.0,
+      },
+      {
+        'timestamp': now.toIso8601String(),
+        'latitude': 37.3382,
+        'longitude': -122.0093,
+        'accuracy': 10.5,
+      },
+    ];
+  }
+
+  /// Geocode place name to coordinates
+  Future<Map<String, dynamic>> _geocodePlace(String? placeName) async {
+    await Future.delayed(const Duration(milliseconds: 250));
+
+    if (placeName == null || placeName.isEmpty) {
+      throw ArgumentError('Place name required for geocoding');
+    }
+
+    // Simulate geocoding result
+    final results = {
+      'place': placeName,
+      'latitude': 37.7749, // San Francisco example
+      'longitude': -122.4194,
+      'country': 'United States',
+      'state': 'California',
+      'city': 'San Francisco',
+      'confidence': 0.95,
+    };
+
+    return results;
   }
 }
