@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'unified_provider_settings.dart';
+import 'package:micro/features/mcp/presentation/pages/mcp_server_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -26,6 +27,25 @@ class SettingsPage extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (context) => const UnifiedProviderSettings(),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // MCP Servers Section
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.dns),
+              title: const Text('MCP Servers'),
+              subtitle:
+                  const Text('Manage Model Context Protocol server connections'),
+              trailing: const Icon(Icons.arrow_forward_ios),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MCPServerSettingsPage(),
                   ),
                 );
               },
