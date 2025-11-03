@@ -126,17 +126,15 @@
 
 ## 🚧 REMAINING WORK
 
-### Phase 2: Provider Settings Integration (Estimated: 2-3 hours)
+### Phase 2: Provider Settings Integration (IN PROGRESS)
 
-#### Task 2.1: Add MCP Toggle to Provider Settings Pages
-**Files to modify**:
-- `lib/presentation/pages/ai_providers/model_provider_detail_page.dart` (or individual provider pages)
-- Need to add:
-  - "Advanced Configuration" section
-  - Toggle: "Enable MCP Integration"
-  - Dropdown: Select MCP server(s) to use with this provider
-  - Info tooltip explaining MCP benefits
-  - Save MCP config alongside provider config
+#### Task 2.1: Add MCP Toggle to Provider Settings Pages ✅ COMPLETE
+**Completed Implementation**:
+- ✅ Extended `ProviderConfig` model with `mcpEnabled` and `mcpServerIds`
+- ✅ Created `MCPProviderConfigWidget` for MCP server selection UI
+- ✅ Added Step 5 to `EditProviderDialog` for MCP configuration
+- ✅ Updated `ProviderCard` to display MCP integration status
+- ✅ All changes backward compatible with existing configurations
 
 **Implementation approach**:
 ```dart
@@ -162,43 +160,23 @@ if (mcpEnabled)
   ),
 ```
 
-#### Task 2.2: Create Provider-MCP Binding Service
-**New file**: `lib/infrastructure/ai/mcp/provider_mcp_binding.dart`
+#### Task 2.2: Create Provider-MCP Binding Service ✅ COMPLETE
+**Completed Implementation**: `lib/infrastructure/ai/mcp/provider_mcp_binding.dart`
 
-**Purpose**: Intercept AI provider requests and route tool calls to MCP
+**Implemented features**:
+- ✅ `ProviderMCPBinding` class with tool execution logic
+- ✅ `executeToolCall()` - Routes tool calls to MCP servers
+- ✅ `getAvailableTools()` - Aggregates tools from configured servers
+- ✅ `convertMCPToolToProviderFormat()` - Converts MCP tools to provider format
+- ✅ `convertProviderToolCallToMCP()` - Translates provider calls to MCP
+- ✅ `convertMCPResultToProviderFormat()` - Translates results back
+- ✅ Support for OpenAI, Anthropic, Google/Gemini formats
+- ✅ Error handling and validation
 
-**Key components**:
-```dart
-class ProviderMCPBinding {
-  final MCPService mcpService;
-  
-  // Intercept AI tool calls
-  Future<Map<String, dynamic>> executeToolCall({
-    required String providerId,
-    required String toolName,
-    required Map<String, dynamic> parameters,
-  }) async {
-    // 1. Check if provider has MCP enabled
-    // 2. Find MCP server that has this tool
-    // 3. Translate AI provider format → MCP format
-    // 4. Call mcpService.callTool()
-    // 5. Translate MCP result → AI provider format
-    // 6. Return result
-  }
-  
-  // Get available tools for provider
-  Future<List<Tool>> getAvailableToolsForProvider(String providerId) async {
-    // 1. Get provider's MCP server IDs
-    // 2. Aggregate tools from those servers
-    // 3. Convert to provider's tool format
-  }
-}
-```
-
-**Integration points**:
-- Hook into chat provider's tool execution flow
-- Modify agent execution to check MCP tools first
-- Add error handling for MCP failures
+**Remaining integration**:
+- Hook into actual chat message flow (needs chat provider analysis)
+- Connect to agent execution pipeline
+- Add real-time tool execution monitoring
 
 ---
 
@@ -328,17 +306,17 @@ class MCPWebSocketService {
 
 ## 📊 IMPLEMENTATION SUMMARY
 
-### Completed (Phase 1)
-- **Files Created**: 9
-- **Lines of Code**: ~2,500
-- **Time Spent**: ~2 hours
-- **Completion**: 45%
-
-### Remaining (Phases 2-5)
-- **Estimated Files**: 15-20
-- **Estimated Lines**: ~3,500
-- **Estimated Time**: 9-13 hours
+### Completed (Phases 1 & 2.1)
+- **Files Created**: 14
+- **Lines of Code**: ~3,200
+- **Time Spent**: ~3 hours
 - **Completion**: 55%
+
+### Remaining (Phases 2.2-5)
+- **Estimated Files**: 10-15
+- **Estimated Lines**: ~2,800
+- **Estimated Time**: 6-10 hours
+- **Completion**: 45%
 
 ---
 
