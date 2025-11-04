@@ -58,10 +58,10 @@ final mcpServerStateProvider = Provider.family<MCPServerState?, String>((ref, se
 });
 
 /// Provider for connected MCP servers
-final connectedMCPServersProvider = StreamProvider<List<MCPServerState>>((ref) async* {
-  await for (final states in ref.watch(mcpServerStatesProvider.stream)) {
-    yield states.where((s) => s.status == MCPConnectionStatus.connected).toList();
-  }
+final connectedMCPServersProvider = Provider<List<MCPServerState>>((ref) {
+  final statesAsync = ref.watch(mcpServerStatesProvider);
+  final states = statesAsync.value ?? [];
+  return states.where((s) => s.status == MCPConnectionStatus.connected).toList();
 });
 
 /// Provider for all available MCP tools from all connected servers
