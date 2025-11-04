@@ -12,6 +12,7 @@ import '../pages/unified_provider_settings.dart';
 import '../providers/app_providers.dart';
 import '../pages/agent_dashboard_page.dart';
 import '../../features/mcp/presentation/pages/mcp_server_settings_page.dart';
+import '../pages/tools_page.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -45,12 +46,12 @@ class AppRouter {
             builder: (context, state) => const EnhancedAIChatPage(),
           ),
 
-          // Tools - Temporarily disabled (dead code)
-          // GoRoute(
-          //   path: RouteConstants.tools,
-          //   name: 'tools',
-          //   builder: (context, state) => const SimpleToolsPage(),
-          // ),
+          // Tools - MCP Tools Page
+          GoRoute(
+            path: RouteConstants.tools,
+            name: 'tools',
+            builder: (context, state) => const ToolsPage(),
+          ),
 
           // Workflows
           GoRoute(

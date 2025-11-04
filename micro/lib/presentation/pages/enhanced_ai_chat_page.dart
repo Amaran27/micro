@@ -608,16 +608,9 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   Widget _buildAgentPanelContent() {
     return Consumer(
       builder: (context, ref, child) {
-        return TabBarView(
-          children: [
-            // Agent creation and management
-            _buildAgentCreationTab(ref),
-            // Agent execution
-            _buildAgentExecutionTab(ref),
-            // Agent memory
-            _buildAgentMemoryTab(ref),
-          ],
-        );
+        // Simplified agent panel without TabBarView
+        // Shows agent creation/management interface
+        return _buildAgentCreationTab(ref);
       },
     );
   }
