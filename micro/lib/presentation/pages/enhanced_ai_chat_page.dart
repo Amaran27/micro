@@ -32,9 +32,8 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   // Tracks whether\u00a0loading dialog is currently visible so we can dismiss safely.
   bool _loadingDialogVisible = false;
 
-  // Agent mode state
+  // Agent mode state - simplified per Micro 2.0 spec
   bool _agentMode = false;
-  bool _showAgentPanel = false;
   final bool _autoDetectAgentCommands = true;
 
   @override
@@ -134,7 +133,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
       if (!_agentMode) {
         setState(() {
           _agentMode = true;
-          _showAgentPanel = true;
         });
       }
 
@@ -334,7 +332,6 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                           onChanged: (value) {
                             setState(() {
                               _agentMode = value;
-                              _showAgentPanel = value;
                             });
                           },
                           materialTapTargetSize:
@@ -354,12 +351,12 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
               ),
             ),
 
-            // Collapsible Agent Panel (only shown when agent mode is active)
-            if (_agentMode && _showAgentPanel)
+            // Agent mode indicator - simplified (no panel per Micro 2.0 spec)
+            if (_agentMode)
               Container(
-                height: 200,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   border: Border(
                     top: BorderSide(
                       color: Theme.of(context).dividerColor,
@@ -367,52 +364,38 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                     ),
                   ),
                 ),
-                child: Column(
+                child: Row(
                   children: [
-                    // Panel header
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.smart_toy,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Agent Panel',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            icon: Icon(
-                              _showAgentPanel
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _showAgentPanel = !_showAgentPanel;
-                              });
-                            },
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(24, 24),
-                              padding: EdgeInsets.zero,
-                            ),
-                          ),
-                        ],
+                    Icon(
+                      Icons.smart_toy,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Micro Agent Mode Active',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
-                    // Panel content
-                    Expanded(
-                      child: _buildAgentPanelContent(),
+                    const Spacer(),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final connectedServers = ref.watch(connectedMCPServersProvider);
+                        final toolCount = connectedServers.fold<int>(
+                          0,
+                          (sum, server) => sum + server.availableTools.length,
+                        );
+                        return Text(
+                          'Using $toolCount tools from ${connectedServers.length} servers',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.7),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -605,60 +588,11 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   }
 
   /// Build agent panel content
-  Widget _buildAgentPanelContent() {
-    return Consumer(
-      builder: (context, ref, child) {
-        // Simplified agent panel without TabBarView
-        // Shows agent creation/management interface
-        return _buildAgentCreationTab(ref);
-      },
-    );
-  }
+  // Removed: _buildAgentPanelContent() - No longer needed per Micro 2.0 spec
+  // Agent mode is now just a toggle that enables tool use, no separate panel
 
-  /// Build agent creation and management tab
-  Widget _buildAgentCreationTab(WidgetRef ref) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Create Agent',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Configure an autonomous agent to help you with tasks',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton.icon(
-          onPressed: () => _showAgentCreationDialog(context),
-          icon: const Icon(Icons.add),
-          label: const Text('Create New Agent'),
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 48),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Divider(),
-        const SizedBox(height: 16),
-        Text(
-          'Quick Agent Commands',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _buildCommandChip('/agent create'),
-            _buildCommandChip('/agent list'),
-            _buildCommandChip('/agent execute'),
-            _buildCommandChip('/agent status'),
-          ],
-        ),
-      ],
-    );
-  }
+  // Removed: _buildAgentCreationTab() - No longer needed per Micro 2.0 spec
+  // Agent configuration is handled through agent mode toggle + Tools page
 
   /// Build agent execution tab
   Widget _buildAgentExecutionTab(WidgetRef ref) {

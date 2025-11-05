@@ -206,12 +206,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       route: RouteConstants.tools,
     ),
     NavigationItem(
-      icon: Icons.smart_toy_outlined,
-      selectedIcon: Icons.smart_toy,
-      label: 'Agents',
-      route: RouteConstants.agents,
-    ),
-    NavigationItem(
       icon: Icons.settings_outlined,
       selectedIcon: Icons.settings,
       label: 'Settings',
