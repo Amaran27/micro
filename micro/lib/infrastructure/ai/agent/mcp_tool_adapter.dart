@@ -19,7 +19,7 @@ class MCPToolAdapter extends Tool {
         );
 
   @override
-  Future<String> invoke(ToolInput input) async {
+  Future<String> invoke(dynamic input) async {
     try {
       // Extract parameters from LangChain input
       final parameters = _extractParameters(input);
@@ -43,7 +43,7 @@ class MCPToolAdapter extends Tool {
   }
 
   /// Extract parameters from LangChain ToolInput
-  Map<String, dynamic> _extractParameters(ToolInput input) {
+  Map<String, dynamic> _extractParameters(dynamic input) {
     // LangChain passes input as a string or map
     if (input is Map) {
       return Map<String, dynamic>.from(input);

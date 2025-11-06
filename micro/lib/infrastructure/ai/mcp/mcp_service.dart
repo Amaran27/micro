@@ -292,6 +292,16 @@ class MCPService {
     return state?.availableTools ?? [];
   }
 
+  /// Alias for getAvailableTools
+  Future<List<MCPTool>> getServerTools(String serverId) async {
+    return getAvailableTools(serverId);
+  }
+
+  /// Get all server IDs
+  List<String> getAllServerIds() {
+    return _serverConfigs.keys.toList();
+  }
+
   /// Get all available tools from all connected servers
   List<MCPTool> getAllAvailableTools() {
     final tools = <MCPTool>[];

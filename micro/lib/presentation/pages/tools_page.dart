@@ -231,7 +231,7 @@ class _ServersTab extends ConsumerWidget {
                               fontWeight: FontWeight.bold,
                             ),
                       ),
-                      Text Chip(
+                      Chip(
                         label: Text('${_getConnectedCount(ref, configs)} connected'),
                         backgroundColor: Colors.green.withOpacity(0.1),
                         labelStyle: const TextStyle(color: Colors.green),
@@ -253,7 +253,7 @@ class _ServersTab extends ConsumerWidget {
 
   Widget _buildDiscoveryGrid(BuildContext context, WidgetRef ref) {
     // Filter recommended servers
-    var servers = getRecommendedServers();
+    var servers = recommendedMCPServers;
     
     if (!platformFilters.contains('All')) {
       servers = servers.where((s) {
@@ -448,7 +448,7 @@ class _ServersTab extends ConsumerWidget {
                     _editServer(context, ref, config);
                     break;
                   case 'test':
-                    _testServer(ref, config.id);
+                    _testServer(ref, config);
                     break;
                   case 'delete':
                     _deleteServer(context, ref, config.id);
@@ -537,19 +537,19 @@ class _ServersTab extends ConsumerWidget {
   }
 
   void _connectServer(WidgetRef ref, String serverId) {
-    ref.read(mcpOperationsProvider.notifier).connect(serverId);
+    ref.read(mcpOperationsProvider.notifier).connectServer(serverId);
   }
 
   void _disconnectServer(WidgetRef ref, String serverId) {
-    ref.read(mcpOperationsProvider.notifier).disconnect(serverId);
+    ref.read(mcpOperationsProvider.notifier).disconnectServer(serverId);
   }
 
   void _editServer(BuildContext context, WidgetRef ref, MCPServerConfig config) {
     context.push('/settings/mcp'); // Navigate to edit
   }
 
-  void _testServer(WidgetRef ref, String serverId) {
-    ref.read(mcpOperationsProvider.notifier).testConnection(serverId);
+  void _testServer(WidgetRef ref, MCPServerConfig config) {
+    ref.read(mcpOperationsProvider.notifier).testConnection(config);
   }
 
   void _deleteServer(BuildContext context, WidgetRef ref, String serverId) {

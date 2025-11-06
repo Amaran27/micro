@@ -20,6 +20,13 @@ enum MCPConnectionStatus {
   error,
 }
 
+/// Platform support for MCP servers
+enum MCPServerPlatform {
+  desktop,
+  mobile,
+  both,
+}
+
 /// MCP Server Configuration
 @JsonSerializable()
 class MCPServerConfig {
@@ -35,7 +42,9 @@ class MCPServerConfig {
   // For stdio
   final String? command;
   final List<String>? args;
+  final List<String>? arguments; // Alias for args
   final Map<String, String>? env;
+  final Map<String, String>? environment; // Alias for env
   
   final bool autoConnect;
   final bool enabled;
@@ -49,7 +58,9 @@ class MCPServerConfig {
     this.headers,
     this.command,
     this.args,
+    this.arguments,
     this.env,
+    this.environment,
     this.autoConnect = false,
     this.enabled = true,
   });
@@ -68,7 +79,9 @@ class MCPServerConfig {
     Map<String, String>? headers,
     String? command,
     List<String>? args,
+    List<String>? arguments,
     Map<String, String>? env,
+    Map<String, String>? environment,
     bool? autoConnect,
     bool? enabled,
   }) {
@@ -81,7 +94,9 @@ class MCPServerConfig {
       headers: headers ?? this.headers,
       command: command ?? this.command,
       args: args ?? this.args,
+      arguments: arguments ?? this.arguments,
       env: env ?? this.env,
+      environment: environment ?? this.environment,
       autoConnect: autoConnect ?? this.autoConnect,
       enabled: enabled ?? this.enabled,
     );
@@ -189,9 +204,11 @@ class RecommendedMCPServer {
   final String icon;
   final MCPTransportType transportType;
   final List<String> supportedPlatforms; // ['desktop', 'mobile']
+  final MCPServerPlatform platform;
   final String? installCommand;
   final Map<String, dynamic> defaultConfig;
   final String? documentationUrl;
+  final String? docUrl; // Alias for documentationUrl
 
   const RecommendedMCPServer({
     required this.id,
@@ -200,8 +217,10 @@ class RecommendedMCPServer {
     required this.icon,
     required this.transportType,
     required this.supportedPlatforms,
+    required this.platform,
     this.installCommand,
     required this.defaultConfig,
     this.documentationUrl,
+    this.docUrl,
   });
 }
