@@ -19,7 +19,11 @@ MCPServerConfig _$MCPServerConfigFromJson(Map<String, dynamic> json) =>
       ),
       command: json['command'] as String?,
       args: (json['args'] as List<dynamic>?)?.map((e) => e as String).toList(),
+      arguments: (json['arguments'] as List<dynamic>?)?.map((e) => e as String).toList(),
       env: (json['env'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as String),
+      ),
+      environment: (json['environment'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, e as String),
       ),
       autoConnect: json['autoConnect'] as bool? ?? false,
@@ -36,7 +40,9 @@ Map<String, dynamic> _$MCPServerConfigToJson(MCPServerConfig instance) =>
       'headers': instance.headers,
       'command': instance.command,
       'args': instance.args,
+      'arguments': instance.arguments,
       'env': instance.env,
+      'environment': instance.environment,
       'autoConnect': instance.autoConnect,
       'enabled': instance.enabled,
     };

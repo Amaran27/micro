@@ -481,8 +481,8 @@ class MCPService {
       // Start process
       final process = await Process.start(
         config.command!,
-        config.arguments ?? [],
-        environment: config.environment,
+        config.arguments ?? config.args ?? [],
+        environment: config.environment ?? config.env,
       );
       _stdioProcesses[serverId] = process;
 
