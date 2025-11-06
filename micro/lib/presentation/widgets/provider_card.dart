@@ -289,6 +289,58 @@ class _ProviderCardState extends ConsumerState<ProviderCard> {
               const SizedBox(height: 12),
             ],
 
+            // MCP Integration status
+            if (widget.config.mcpEnabled) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.dns,
+                      size: 16,
+                      color: Colors.blue,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'MCP Integration',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.config.mcpServerIds.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.config.mcpServerIds
+                      .map((serverId) => Chip(
+                            avatar: Icon(Icons.check_circle, size: 16, color: Colors.green),
+                            label: Text(
+                              serverId,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            backgroundColor: Colors.blue.withOpacity(0.1),
+                            side: BorderSide(
+                              color: Colors.blue.withOpacity(0.3),
+                              width: 0.5,
+                            ),
+                          ))
+                      .toList(),
+                )
+              else
+                Text(
+                  'No MCP servers configured',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+              const SizedBox(height: 12),
+            ],
+
             // Last tested info
             if (widget.config.lastTestedAt != null)
               Padding(

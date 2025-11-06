@@ -14,6 +14,10 @@ import 'package:micro/features/chat/domain/utils/chat_message_converter.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
 import 'package:micro/presentation/providers/provider_config_providers.dart';
 import 'package:micro/infrastructure/ai/provider_config_model.dart';
+import 'package:micro/infrastructure/ai/mcp/mcp_service.dart';
+import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
+import 'package:micro/infrastructure/ai/agent/agent_service.dart';
+import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
 
 class ChatState {
   final List<micro.ChatMessage> messages;
@@ -60,16 +64,25 @@ final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>(
 class ChatNotifier extends StateNotifier<ChatState> {
   final AIProviderConfig _aiProviderConfig;
   final Ref _ref;
+  MCPService? _mcpService;
+  AgentService? _agentService;
 
   ChatNotifier(this._aiProviderConfig, this._ref) : super(ChatState()) {
     _initializeAIProvider();
+    _initializeAgentServices();
   }
 
   Future<void> _initializeAIProvider() async {
     await _aiProviderConfig.initialize();
   }
 
-  Future<void> sendMessage(String text) async {
+  void _initializeAgentServices() {
+    // Initialize MCP and Agent services
+    _mcpService = MCPService();
+    _agentService = AgentService(mcpService: _mcpService!);
+  }
+
+  Future<void> sendMessage(String text, {bool agentMode = false}) async {
     if (text.trim().isEmpty) return;
 
     final langchainUserMessage =
@@ -82,6 +95,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     try {
+      // AGENT MODE: Use autonomous agent with MCP tools
+      if (agentMode && _agentService != null) {
+        await _executeAgentMode(text);
+        return;
+      }
+
+      // NORMAL MODE: Use existing provider adapters
       // Use active models from provider config instead of deleted model_selection_notifier
       final currentModelId = null; // No specific model selected yet
       print('DEBUG: Using active models from provider config');
@@ -431,5 +451,92 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Default to Google for unknown models
     return 'google';
+  }
+
+  /// Execute agent mode with MCP tools
+  Future<void> _executeAgentMode(String userMessage) async {
+    try {
+      // Get enabled MCP server IDs (only connected servers)
+      final mcpServerIds = _getEnabledMCPServerIds();
+      
+      print('DEBUG: Agent mode - Using MCP servers: $mcpServerIds');
+      
+      // Create agent with MCP tools
+      final agent = await _agentService!.createAgent(
+        name: 'Micro',
+        goal: 'Assist user with their request',
+        mcpServerIds: mcpServerIds.isNotEmpty ? mcpServerIds : null,
+      );
+      
+      // Execute agent with user's query
+      final result = await agent.execute(query: userMessage);
+      
+      // Add agent response with tool execution steps
+      _addAgentResponseWithSteps(result);
+      
+    } catch (e, stackTrace) {
+      print('DEBUG: Agent execution error: $e');
+      print('DEBUG: Stack trace: $stackTrace');
+      
+      state = state.copyWith(
+        error: 'Agent execution failed: $e',
+        isLoading: false,
+      );
+    }
+  }
+
+  /// Get list of enabled (connected) MCP server IDs
+  List<String> _getEnabledMCPServerIds() {
+    if (_mcpService == null) return [];
+    
+    final configs = _mcpService!.getServerConfigs();
+    final enabledServers = <String>[];
+    
+    for (final config in configs) {
+      final state = _mcpService!.getServerState(config.id);
+      if (state != null && state.status == MCPConnectionStatus.connected) {
+        enabledServers.add(config.id);
+      }
+    }
+    
+    return enabledServers;
+  }
+
+  /// Add agent response with tool execution steps to chat
+  void _addAgentResponseWithSteps(agent_types.AgentResult result) {
+    // Format agent response with tool steps
+    final stepsText = StringBuffer();
+    
+    if (result.steps.isNotEmpty) {
+      stepsText.writeln('\n---\n**Execution Steps:**\n');
+      
+      for (var i = 0; i < result.steps.length; i++) {
+        final step = result.steps[i];
+        stepsText.writeln('${i + 1}. ${step.type.name}: ${step.description}');
+        
+        if (step.input != null) {
+          stepsText.writeln('   Input: ${step.input}');
+        }
+        if (step.output != null) {
+          stepsText.writeln('   Output: ${step.output}');
+        }
+        if (step.duration.inMilliseconds > 0) {
+          stepsText.writeln('   Duration: ${step.duration.inMilliseconds}ms');
+        }
+      }
+    }
+    
+    final fullResponse = result.result + stepsText.toString();
+    
+    // Convert to chat message format
+    final langchainAssistantMessage =
+        ChatMessage.ai(ChatMessageContent.text(fullResponse));
+    final assistantMessage = convertLangchainChatMessage(langchainAssistantMessage);
+    
+    state = state.copyWith(
+      messages: [...state.messages, assistantMessage],
+      isLoading: false,
+      error: null,
+    );
   }
 }

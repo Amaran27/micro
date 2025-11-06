@@ -11,6 +11,8 @@ import '../pages/onboarding_page.dart';
 import '../pages/unified_provider_settings.dart';
 import '../providers/app_providers.dart';
 import '../pages/agent_dashboard_page.dart';
+import '../../features/mcp/presentation/pages/mcp_server_settings_page.dart';
+import '../pages/tools_page.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -44,12 +46,12 @@ class AppRouter {
             builder: (context, state) => const EnhancedAIChatPage(),
           ),
 
-          // Tools - Temporarily disabled (dead code)
-          // GoRoute(
-          //   path: RouteConstants.tools,
-          //   name: 'tools',
-          //   builder: (context, state) => const SimpleToolsPage(),
-          // ),
+          // Tools - MCP Tools Page
+          GoRoute(
+            path: RouteConstants.tools,
+            name: 'tools',
+            builder: (context, state) => const ToolsPage(),
+          ),
 
           // Workflows
           GoRoute(
@@ -69,6 +71,12 @@ class AppRouter {
                 path: 'providers',
                 name: 'providers',
                 builder: (context, state) => const UnifiedProviderSettings(),
+              ),
+              // MCP Servers
+              GoRoute(
+                path: 'mcp',
+                name: 'mcp',
+                builder: (context, state) => const MCPServerSettingsPage(),
               ),
             ],
           ),
@@ -196,12 +204,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       selectedIcon: Icons.build,
       label: 'Tools',
       route: RouteConstants.tools,
-    ),
-    NavigationItem(
-      icon: Icons.smart_toy_outlined,
-      selectedIcon: Icons.smart_toy,
-      label: 'Agents',
-      route: RouteConstants.agents,
     ),
     NavigationItem(
       icon: Icons.settings_outlined,

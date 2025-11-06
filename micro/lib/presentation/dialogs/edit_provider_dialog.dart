@@ -5,6 +5,7 @@ import 'package:micro/infrastructure/ai/provider_config_model.dart';
 import 'package:micro/infrastructure/ai/provider_registry.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
 import 'package:micro/presentation/widgets/custom_models_section.dart';
+import 'package:micro/presentation/widgets/mcp_provider_config_widget.dart';
 
 /// Dialog for editing an existing AI provider configuration
 /// Allows updating API key, endpoint, deployment ID, models
@@ -46,6 +47,10 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
   late Set<String> _selectedModels;
   late Set<String> _customModels;
 
+  // MCP Integration
+  late bool _mcpEnabled;
+  late List<String> _mcpServerIds;
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +68,8 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
     _customModels = Set.from(widget.config.customModels);
     _testPassed = widget.config.testPassed;
     _availableModels = widget.config.favoriteModels;
+    _mcpEnabled = widget.config.mcpEnabled;
+    _mcpServerIds = List.from(widget.config.mcpServerIds);
   }
 
   @override
@@ -85,6 +92,8 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
         return _testPassed;
       case 3:
         return _selectedModels.isNotEmpty;
+      case 4:
+        return true; // MCP step is optional
       default:
         return false;
     }
@@ -92,7 +101,7 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
 
   void _nextStep() {
     if (_validateStep()) {
-      if (_currentStep < 3) {
+      if (_currentStep < 4) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -303,6 +312,8 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
         testPassed: _testPassed,
         favoriteModels: _selectedModels.toList(),
         lastTestedAt: DateTime.now(),
+        mcpEnabled: _mcpEnabled,
+        mcpServerIds: _mcpServerIds,
       );
 
       await ref.read(providerStorageServiceProvider).saveConfig(updatedConfig);
@@ -374,7 +385,7 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(4, (index) {
+                children: List.generate(5, (index) {
                   final isActive = index <= _currentStep;
                   return Expanded(
                     child: Column(
@@ -399,7 +410,7 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
                             ),
                           ),
                         ),
-                        if (index < 3)
+                        if (index < 4)
                           Container(
                             height: 2,
                             width: double.infinity,
@@ -429,6 +440,7 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
                   _buildStep2_Endpoint(),
                   _buildStep3_TestConnection(),
                   _buildStep4_ModelSelection(),
+                  _buildStep5_MCPIntegration(),
                 ],
               ),
             ),
@@ -444,13 +456,13 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Back'),
                   ),
-                  if (_currentStep < 3)
+                  if (_currentStep < 4)
                     ElevatedButton.icon(
                       onPressed: _nextStep,
                       label: const Text('Next'),
                       icon: const Icon(Icons.arrow_forward),
                     ),
-                  if (_currentStep == 3)
+                  if (_currentStep == 4)
                     ElevatedButton.icon(
                       onPressed: _saveConfiguration,
                       label: const Text('Save Changes'),
@@ -773,6 +785,39 @@ class _EditProviderDialogState extends ConsumerState<EditProviderDialog> {
               );
             }),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep5_MCPIntegration() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Step 5: MCP Integration (Optional)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Enable Model Context Protocol integration to extend this provider with additional tools',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+          ),
+          const SizedBox(height: 24),
+          MCPProviderConfigWidget(
+            mcpEnabled: _mcpEnabled,
+            mcpServerIds: _mcpServerIds,
+            onChanged: (enabled, serverIds) {
+              setState(() {
+                _mcpEnabled = enabled;
+                _mcpServerIds = serverIds;
+              });
+            },
+          ),
         ],
       ),
     );
