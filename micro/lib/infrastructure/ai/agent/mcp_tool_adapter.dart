@@ -1,10 +1,11 @@
 import 'package:langchain/langchain.dart';
+import 'package:langchain_core/tools.dart';
 import '../mcp/mcp_service.dart';
 import '../mcp/models/mcp_models.dart';
 
 /// Adapter that wraps MCP tools as LangChain Tool objects
 /// This allows agents to use MCP tools seamlessly through the LangChain interface
-final class MCPToolAdapter extends Tool<Map<String, dynamic>> {
+final class MCPToolAdapter extends Tool<Map<String, dynamic>, ToolOptions, String> {
   final MCPService mcpService;
   final String serverId;
   final MCPTool mcpTool;
@@ -16,6 +17,7 @@ final class MCPToolAdapter extends Tool<Map<String, dynamic>> {
   }) : super(
           name: mcpTool.name,
           description: mcpTool.description,
+          inputJsonSchema: mcpTool.inputSchema,
         );
 
   @override
@@ -26,7 +28,7 @@ final class MCPToolAdapter extends Tool<Map<String, dynamic>> {
   @override
   Future<String> invokeInternal(
     Map<String, dynamic> input, {
-    Map<String, dynamic>? options,
+    ToolOptions? options,
   }) async {
     try {
       // Call MCP tool
@@ -74,8 +76,8 @@ class MCPToolFactory {
   MCPToolFactory(this.mcpService);
 
   /// Get all available tools from connected MCP servers
-  Future<List<Tool>> getAllTools() async {
-    final tools = <Tool>[];
+  Future<List<Tool<Object, ToolOptions, Object>>> getAllTools() async {
+    final tools = <Tool<Object, ToolOptions, Object>>[];
     
     for (final serverId in mcpService.getAllServerIds()) {
       try {
@@ -90,8 +92,8 @@ class MCPToolFactory {
   }
 
   /// Get tools for a specific server
-  Future<List<Tool>> getToolsForServer(String serverId) async {
-    final serverTools = <Tool>[];
+  Future<List<Tool<Object, ToolOptions, Object>>> getToolsForServer(String serverId) async {
+    final serverTools = <Tool<Object, ToolOptions, Object>>[];
     
     try {
       final mcpTools = mcpService.getServerTools(serverId);
@@ -111,8 +113,8 @@ class MCPToolFactory {
   }
 
   /// Get tools from enabled servers based on user settings
-  Future<List<Tool>> getEnabledTools(List<String> enabledServerIds) async {
-    final tools = <Tool>[];
+  Future<List<Tool<Object, ToolOptions, Object>>> getEnabledTools(List<String> enabledServerIds) async {
+    final tools = <Tool<Object, ToolOptions, Object>>[];
     
     for (final serverId in enabledServerIds) {
       try {
@@ -127,7 +129,7 @@ class MCPToolFactory {
   }
 
   /// Get specific tools by name from any connected server
-  Future<List<Tool>> getToolsByName(List<String> toolNames) async {
+  Future<List<Tool<Object, ToolOptions, Object>>> getToolsByName(List<String> toolNames) async {
     final allTools = await getAllTools();
     return allTools.where((tool) => toolNames.contains(tool.name)).toList();
   }

@@ -8,6 +8,7 @@ import 'package:micro/presentation/providers/app_providers.dart';
 import 'package:micro/infrastructure/ai/provider_registry.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
 import 'package:micro/features/agent/providers/agent_execution_ui_provider.dart';
+import 'package:micro/infrastructure/ai/mcp/mcp_providers.dart';
 
 /// Enhanced AI Chat Page with Markdown Support
 ///

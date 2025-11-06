@@ -462,14 +462,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
       print('DEBUG: Agent mode - Using MCP servers: $mcpServerIds');
       
       // Create agent with MCP tools
-      final agent = await _agentService!.createAgent(
+      final agentId = await _agentService!.createAgent(
         name: 'Micro',
-        goal: 'Assist user with their request',
         mcpServerIds: mcpServerIds.isNotEmpty ? mcpServerIds : null,
       );
       
       // Execute agent with user's query
-      final result = await agent.execute(query: userMessage);
+      final result = await _agentService!.executeGoal(
+        goal: userMessage,
+        agentId: agentId,
+      );
       
       // Add agent response with tool execution steps
       _addAgentResponseWithSteps(result);
@@ -530,7 +532,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     
     // Convert to chat message format
     final langchainAssistantMessage =
-        ChatMessage.ai(ChatMessageContent.text(fullResponse));
+        ChatMessage.ai(fullResponse);
     final assistantMessage = convertLangchainChatMessage(langchainAssistantMessage);
     
     state = state.copyWith(
