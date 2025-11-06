@@ -9,7 +9,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Access and manipulate local files and directories. Provides tools for reading, writing, and managing files.',
     icon: '📁',
     transportType: MCPTransportType.stdio,
-    supportedPlatforms: ['desktop'],
     platform: MCPServerPlatform.desktop,
     installCommand: 'npx -y @modelcontextprotocol/server-filesystem',
     defaultConfig: {
@@ -17,7 +16,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       'args': ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/directory'],
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
   ),
   
   // GitHub server - Both platforms
@@ -27,7 +25,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Interact with GitHub repositories, issues, and pull requests. Create branches, commits, and manage code reviews.',
     icon: '🐙',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
     platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3000/mcp',
@@ -36,7 +33,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       },
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/github',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/github',
   ),
   
   // Brave Search - Both platforms
@@ -46,7 +42,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Search the web using Brave Search API. Get up-to-date information from the internet.',
     icon: '🔍',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
     platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3001/mcp',
@@ -55,7 +50,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       },
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search',
   ),
   
   // PostgreSQL - Desktop only
@@ -65,7 +59,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Connect to PostgreSQL databases. Query, insert, update, and manage database records.',
     icon: '🐘',
     transportType: MCPTransportType.stdio,
-    supportedPlatforms: ['desktop'],
     platform: MCPServerPlatform.desktop,
     installCommand: 'npx -y @modelcontextprotocol/server-postgres',
     defaultConfig: {
@@ -73,7 +66,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       'args': ['-y', '@modelcontextprotocol/server-postgres', 'postgresql://user:password@localhost/dbname'],
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres',
   ),
   
   // Slack - Both platforms
@@ -83,7 +75,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Send messages, read channels, and manage Slack workspaces. Automate team communication.',
     icon: '💬',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
     platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3002/mcp',
@@ -92,7 +83,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       },
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/slack',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/slack',
   ),
   
   // Google Drive - Both platforms
@@ -102,7 +92,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Access and manage files in Google Drive. Read, write, and organize documents and spreadsheets.',
     icon: '📊',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
     platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3003/mcp',
@@ -111,7 +100,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       },
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/google-drive',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/google-drive',
   ),
   
   // Git - Desktop only
@@ -121,7 +109,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Execute git commands and manage repositories. Clone, commit, push, pull, and manage branches.',
     icon: '🌿',
     transportType: MCPTransportType.stdio,
-    supportedPlatforms: ['desktop'],
     platform: MCPServerPlatform.desktop,
     installCommand: 'npx -y @modelcontextprotocol/server-git',
     defaultConfig: {
@@ -129,7 +116,6 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
       'args': ['-y', '@modelcontextprotocol/server-git'],
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git',
   ),
   
   // Memory/Context - Both platforms
@@ -139,13 +125,11 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Store and retrieve information across conversations. Create long-term memory for your AI assistant.',
     icon: '🧠',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
     platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3004/mcp',
     },
     documentationUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory',
-    docUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory',
   ),
   
   // Custom Server
@@ -155,13 +139,11 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Connect to your own MCP server. Specify the connection details manually.',
     icon: '⚙️',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
     platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:8000/mcp',
     },
     documentationUrl: 'https://modelcontextprotocol.io/docs/servers/creating',
-    docUrl: 'https://modelcontextprotocol.io/docs/servers/creating',
   ),
 ];
 

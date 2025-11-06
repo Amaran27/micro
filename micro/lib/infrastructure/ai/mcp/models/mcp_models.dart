@@ -42,9 +42,11 @@ class MCPServerConfig {
   // For stdio
   final String? command;
   final List<String>? args;
-  final List<String>? arguments; // Alias for args
+  @JsonKey(includeFromJson: true, includeToJson: false)
+  final List<String>? arguments; // Alias for args - read from JSON but don't write
   final Map<String, String>? env;
-  final Map<String, String>? environment; // Alias for env
+  @JsonKey(includeFromJson: true, includeToJson: false)
+  final Map<String, String>? environment; // Alias for env - read from JSON but don't write
   
   final bool autoConnect;
   final bool enabled;
@@ -203,12 +205,10 @@ class RecommendedMCPServer {
   final String description;
   final String icon;
   final MCPTransportType transportType;
-  final List<String> supportedPlatforms; // ['desktop', 'mobile']
   final MCPServerPlatform platform;
   final String? installCommand;
   final Map<String, dynamic> defaultConfig;
   final String? documentationUrl;
-  final String? docUrl; // Alias for documentationUrl
 
   const RecommendedMCPServer({
     required this.id,
@@ -216,11 +216,24 @@ class RecommendedMCPServer {
     required this.description,
     required this.icon,
     required this.transportType,
-    required this.supportedPlatforms,
     required this.platform,
     this.installCommand,
     required this.defaultConfig,
     this.documentationUrl,
-    this.docUrl,
   });
+
+  /// Get supported platforms as list of strings (derived from platform enum)
+  List<String> get supportedPlatforms {
+    switch (platform) {
+      case MCPServerPlatform.desktop:
+        return ['desktop'];
+      case MCPServerPlatform.mobile:
+        return ['mobile'];
+      case MCPServerPlatform.both:
+        return ['desktop', 'mobile'];
+    }
+  }
+
+  /// Alias for documentationUrl for backward compatibility
+  String? get docUrl => documentationUrl;
 }

@@ -40,9 +40,7 @@ Map<String, dynamic> _$MCPServerConfigToJson(MCPServerConfig instance) =>
       'headers': instance.headers,
       'command': instance.command,
       'args': instance.args,
-      'arguments': instance.arguments,
       'env': instance.env,
-      'environment': instance.environment,
       'autoConnect': instance.autoConnect,
       'enabled': instance.enabled,
     };

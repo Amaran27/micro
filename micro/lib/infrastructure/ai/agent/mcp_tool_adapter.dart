@@ -4,7 +4,7 @@ import '../mcp/models/mcp_models.dart';
 
 /// Adapter that wraps MCP tools as LangChain Tool objects
 /// This allows agents to use MCP tools seamlessly through the LangChain interface
-class MCPToolAdapter extends Tool {
+final class MCPToolAdapter extends Tool<Map<String, dynamic>> {
   final MCPService mcpService;
   final String serverId;
   final MCPTool mcpTool;
@@ -19,16 +19,21 @@ class MCPToolAdapter extends Tool {
         );
 
   @override
-  Future<String> invoke(dynamic input) async {
-    try {
-      // Extract parameters from LangChain input
-      final parameters = _extractParameters(input);
+  Map<String, dynamic> getInputFromJson(Map<String, dynamic> json) {
+    return json;
+  }
 
+  @override
+  Future<String> invokeInternal(
+    Map<String, dynamic> input, {
+    Map<String, dynamic>? options,
+  }) async {
+    try {
       // Call MCP tool
       final result = await mcpService.callTool(
         serverId: serverId,
         toolName: mcpTool.name,
-        parameters: parameters,
+        parameters: input,
       );
 
       // Return result as string
@@ -40,18 +45,6 @@ class MCPToolAdapter extends Tool {
     } catch (e) {
       return 'Error executing tool ${mcpTool.name}: $e';
     }
-  }
-
-  /// Extract parameters from LangChain ToolInput
-  Map<String, dynamic> _extractParameters(dynamic input) {
-    // LangChain passes input as a string or map
-    if (input is Map) {
-      return Map<String, dynamic>.from(input);
-    } else if (input is String) {
-      // Try to parse as single argument
-      return {'input': input};
-    }
-    return {};
   }
 
   /// Format successful result
@@ -101,7 +94,7 @@ class MCPToolFactory {
     final serverTools = <Tool>[];
     
     try {
-      final mcpTools = await mcpService.getServerTools(serverId);
+      final mcpTools = mcpService.getServerTools(serverId);
       
       for (final mcpTool in mcpTools) {
         serverTools.add(MCPToolAdapter(

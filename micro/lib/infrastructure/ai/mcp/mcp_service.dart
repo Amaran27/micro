@@ -292,8 +292,8 @@ class MCPService {
     return state?.availableTools ?? [];
   }
 
-  /// Alias for getAvailableTools
-  Future<List<MCPTool>> getServerTools(String serverId) async {
+  /// Alias for getAvailableTools (kept for backward compatibility)
+  List<MCPTool> getServerTools(String serverId) {
     return getAvailableTools(serverId);
   }
 

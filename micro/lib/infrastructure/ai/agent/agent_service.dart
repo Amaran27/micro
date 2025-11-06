@@ -172,7 +172,7 @@ class AgentService {
       final categorized = <String, List<dynamic>>{};
       
       for (final serverId in _mcpService!.getAllServerIds()) {
-        final tools = await _mcpService!.getServerTools(serverId);
+        final tools = _mcpService!.getServerTools(serverId);
         final serverConfig = _mcpService!.getServerConfig(serverId);
         
         categorized[serverConfig?.name ?? serverId] = tools.map((tool) => {
