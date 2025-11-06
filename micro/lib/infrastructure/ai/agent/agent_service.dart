@@ -1,16 +1,23 @@
 import 'package:langchain/langchain.dart' as langchain;
+import 'package:langchain_openai/langchain_openai.dart';
+import 'package:langchain_google/langchain_google.dart';
+import 'package:langchain_anthropic/langchain_anthropic.dart';
 import 'agent_types.dart' as agent_types;
 import 'autonomous_agent.dart';
 import 'agent_memory.dart';
+import '../mcp/mcp_service.dart';
+import 'mcp_tool_adapter.dart';
 
-/// Service that manages autonomous agents
+/// Service that manages autonomous agents with MCP tool integration
 class AgentService {
   final Map<String, AutonomousAgentImpl> _agents = {};
   final Map<String, AgentMemorySystem> _memorySystems = {};
-  // MCP bridges will be added when langchain_openai becomes available
-  final Map<String, dynamic> _bridges = {};
+  final MCPService? _mcpService;
+  final MCPToolFactory? _toolFactory;
 
-  AgentService();
+  AgentService({MCPService? mcpService})
+      : _mcpService = mcpService,
+        _toolFactory = mcpService != null ? MCPToolFactory(mcpService) : null;
 
   /// Initialize agent service
   Future<void> initialize() async {
@@ -18,12 +25,13 @@ class AgentService {
     final defaultMemory = AgentMemorySystem();
     _memorySystems['default'] = defaultMemory;
 
-    // Note: MCP bridge and tools will be integrated when langchain_openai is available
-    // For now, create default agent without MCP tools
+    // Get MCP tools if available
+    final tools = _toolFactory != null
+        ? await _toolFactory!.getAllTools()
+        : <langchain.Tool>[];
 
     // Create default agent
     final model = await _createDefaultModel();
-    final tools = <langchain.Tool>[]; // Empty tools for now
 
     final defaultAgent = AutonomousAgentImpl(
       model: model,
@@ -49,6 +57,7 @@ class AgentService {
     bool enableMemory = true,
     bool enableReasoning = true,
     List<String>? preferredTools,
+    List<String>? mcpServerIds,
     String? memoryId,
   }) async {
     final agentId = name ?? _generateAgentId();
@@ -62,9 +71,11 @@ class AgentService {
     // Create model
     final chatModel = await _createModel(model, temperature);
 
-    // Tools will be integrated when langchain_openai becomes available
-    final tools = <langchain.Tool>[];
-    final toolNames = preferredTools ?? <String>[];
+    // Get MCP tools if available
+    final tools = await _getTools(
+      serverIds: mcpServerIds,
+      toolNames: preferredTools,
+    );
 
     // Create agent
     final agent = AutonomousAgentImpl(
@@ -76,7 +87,7 @@ class AgentService {
         maxSteps: maxSteps,
         enableMemory: enableMemory,
         enableReasoning: enableReasoning,
-        availableTools: toolNames,
+        availableTools: tools.map((t) => t.name).toList(),
       ),
       memory: memorySystem,
     );
@@ -134,15 +145,48 @@ class AgentService {
 
   /// Get available tools
   Future<List<dynamic>> getAvailableTools({String? agentId}) async {
-    // Tools integration pending when langchain_openai is available
-    return <dynamic>[];
+    if (_toolFactory == null) {
+      return <dynamic>[];
+    }
+
+    try {
+      final tools = await _toolFactory!.getAllTools();
+      return tools.map((tool) => {
+        'name': tool.name,
+        'description': tool.description,
+      }).toList();
+    } catch (e) {
+      print('Error getting available tools: $e');
+      return <dynamic>[];
+    }
   }
 
   /// Get tools by category
   Future<Map<String, List<dynamic>>> getToolsByCategory(
       {String? agentId}) async {
-    // Tools integration pending when langchain_openai is available
-    return <String, List<dynamic>>{};
+    if (_mcpService == null) {
+      return <String, List<dynamic>>{};
+    }
+
+    try {
+      final categorized = <String, List<dynamic>>{};
+      
+      for (final serverId in _mcpService!.getAllServerIds()) {
+        final tools = await _mcpService!.getServerTools(serverId);
+        final serverConfig = _mcpService!.getServerConfig(serverId);
+        
+        categorized[serverConfig?.name ?? serverId] = tools.map((tool) => {
+          'name': tool.name,
+          'description': tool.description,
+          'server': serverId,
+        }).toList();
+      }
+      
+      return categorized;
+    } catch (e) {
+      print('Error getting tools by category: $e');
+      return <String, List<dynamic>>{};
+    }
   }
 
   /// Search agent memories
@@ -211,6 +255,7 @@ class AgentService {
     required String specialization,
     String? model,
     List<String>? requiredTools,
+    List<String>? mcpServerIds,
     agent_types.AgentConfig? customConfig,
   }) async {
     final agentId =
@@ -225,8 +270,11 @@ class AgentService {
     // Create specialized model
     final chatModel = await _createModel(model ?? 'gpt-4', 0.5);
 
-    // Tools integration pending when langchain_openai is available
-    final tools = <langchain.Tool>[];
+    // Get MCP tools
+    final tools = await _getTools(
+      serverIds: mcpServerIds,
+      toolNames: requiredTools,
+    );
 
     // Create specialized config
     final config = customConfig ??
@@ -236,6 +284,7 @@ class AgentService {
           maxSteps: 8,
           enableMemory: true,
           enableReasoning: true,
+          availableTools: tools.map((t) => t.name).toList(),
           customParameters: {
             'specialization': specialization,
             'focus_area': specialization,
@@ -333,13 +382,61 @@ class AgentService {
   }
 
   /// Create chat model with specified parameters
-  /// NOTE: This currently returns a placeholder and needs langchain_openai package
-  /// to be added to pubspec.yaml for actual functionality
   Future<langchain.BaseChatModel> _createModel(
       String model, double temperature) async {
-    throw UnimplementedError(
-        'Chat model creation requires langchain_openai package. '
-        'Please add langchain_openai to pubspec.yaml dependencies.');
+    // Support multiple providers based on model name
+    if (model.contains('gpt')) {
+      return ChatOpenAI(
+        apiKey: '', // Will be set from provider config
+        model: model,
+        temperature: temperature,
+      );
+    } else if (model.contains('gemini')) {
+      return ChatGoogleGenerativeAI(
+        apiKey: '', // Will be set from provider config
+        model: model,
+        temperature: temperature,
+      );
+    } else if (model.contains('claude')) {
+      return ChatAnthropic(
+        apiKey: '', // Will be set from provider config  
+        model: model,
+        temperature: temperature,
+      );
+    } else {
+      // Default to OpenAI compatible
+      return ChatOpenAI(
+        apiKey: '',
+        model: model,
+        temperature: temperature,
+      );
+    }
+  }
+
+  /// Get tools based on server IDs or tool names
+  Future<List<langchain.Tool>> _getTools({
+    List<String>? serverIds,
+    List<String>? toolNames,
+  }) async {
+    if (_toolFactory == null) {
+      return <langchain.Tool>[];
+    }
+
+    try {
+      if (serverIds != null && serverIds.isNotEmpty) {
+        // Get tools from specific servers
+        return await _toolFactory!.getEnabledTools(serverIds);
+      } else if (toolNames != null && toolNames.isNotEmpty) {
+        // Get specific tools by name
+        return await _toolFactory!.getToolsByName(toolNames);
+      } else {
+        // Get all available tools
+        return await _toolFactory!.getAllTools();
+      }
+    } catch (e) {
+      print('Error getting tools: $e');
+      return <langchain.Tool>[];
+    }
   }
 
   /// Generate unique agent ID
@@ -356,6 +453,5 @@ class AgentService {
 
     _agents.clear();
     _memorySystems.clear();
-    _bridges.clear();
   }
 }
