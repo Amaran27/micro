@@ -1,5 +1,6 @@
 import 'package:langchain_core/tools.dart';
 import 'platform_tools.dart';
+import 'native_tools.dart';
 
 /// Manages built-in tools and provides them to agents
 class BuiltInToolsManager {
@@ -22,8 +23,20 @@ class BuiltInToolsManager {
       PlatformInfoTool(),
     ]);
 
+    // Register platform-specific tools
+    if (FileSystemTool.isAvailable()) {
+      _allTools.add(FileSystemTool());
+      print('Added FileSystemTool (platform: ${PlatformInfo.platformName})');
+    }
+
+    if (SystemInfoTool.isAvailable()) {
+      _allTools.add(SystemInfoTool());
+      print('Added SystemInfoTool (platform: ${PlatformInfo.platformName})');
+    }
+
     _initialized = true;
     print('BuiltInToolsManager: Registered ${_allTools.length} built-in tools');
+    print('Tools available: ${_allTools.map((t) => t.name).join(", ")}');
   }
 
   /// Get all available built-in tools
@@ -42,9 +55,21 @@ class BuiltInToolsManager {
       return [];
     }
 
-    // For now, all tools work on all platforms
-    // In the future, we can filter based on PlatformInfo
+    // Tools are already filtered during initialization
     return getAllTools();
+  }
+
+  /// Get tool by name
+  Tool<Object, ToolOptions, Object>? getToolByName(String name) {
+    return _allTools.firstWhere(
+      (tool) => tool.name == name,
+      orElse: () => throw Exception('Tool not found: $name'),
+    );
+  }
+
+  /// Get tool names
+  List<String> getToolNames() {
+    return _allTools.map((t) => t.name).toList();
   }
 
   /// Get tool count
