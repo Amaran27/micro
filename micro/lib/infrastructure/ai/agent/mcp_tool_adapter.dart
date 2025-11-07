@@ -2,6 +2,7 @@ import 'package:langchain/langchain.dart';
 import 'package:langchain_core/tools.dart';
 import '../mcp/mcp_service.dart';
 import '../mcp/models/mcp_models.dart';
+import 'tools/builtin_tools_manager.dart';
 
 /// Adapter that wraps MCP tools as LangChain Tool objects
 /// This allows agents to use MCP tools seamlessly through the LangChain interface
@@ -69,16 +70,33 @@ final class MCPToolAdapter extends Tool<Map<String, dynamic>, ToolOptions, Strin
   }
 }
 
-/// Factory for creating LangChain tools from MCP servers
+/// Factory for creating LangChain tools from MCP servers AND built-in tools
 class MCPToolFactory {
   final MCPService mcpService;
+  final BuiltInToolsManager _builtInTools = BuiltInToolsManager();
+  bool _initialized = false;
 
   MCPToolFactory(this.mcpService);
 
-  /// Get all available tools from connected MCP servers
+  /// Initialize the factory (registers built-in tools)
+  Future<void> initialize() async {
+    if (_initialized) return;
+    await _builtInTools.initialize();
+    _initialized = true;
+    print('MCPToolFactory initialized with ${_builtInTools.toolCount} built-in tools');
+  }
+
+  /// Get all available tools (built-in + MCP servers)
   Future<List<Tool<Object, ToolOptions, Object>>> getAllTools() async {
+    if (!_initialized) await initialize();
+    
     final tools = <Tool<Object, ToolOptions, Object>>[];
     
+    // Add built-in tools first
+    tools.addAll(_builtInTools.getAllTools());
+    print('Added ${_builtInTools.toolCount} built-in tools');
+    
+    // Then add MCP server tools
     for (final serverId in mcpService.getAllServerIds()) {
       try {
         final serverTools = await getToolsForServer(serverId);
@@ -88,6 +106,7 @@ class MCPToolFactory {
       }
     }
     
+    print('Total tools available: ${tools.length}');
     return tools;
   }
 

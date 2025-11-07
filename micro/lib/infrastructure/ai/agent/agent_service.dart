@@ -21,14 +21,22 @@ class AgentService {
 
   /// Initialize agent service
   Future<void> initialize() async {
+    // Initialize tool factory if available
+    if (_toolFactory != null) {
+      await _toolFactory!.initialize();
+      print('AgentService: Tool factory initialized');
+    }
+    
     // Create default memory system
     final defaultMemory = AgentMemorySystem();
     _memorySystems['default'] = defaultMemory;
 
-    // Get MCP tools if available
+    // Get tools (built-in + MCP)
     final tools = _toolFactory != null
         ? await _toolFactory!.getAllTools()
         : <langchain.Tool>[];
+
+    print('AgentService: Loaded ${tools.length} tools for default agent');
 
     // Create default agent
     final model = await _createDefaultModel();
@@ -41,11 +49,13 @@ class AgentService {
         maxSteps: 10,
         enableMemory: true,
         enableReasoning: true,
+        availableTools: tools.map((t) => t.name).toList(),
       ),
       memory: defaultMemory,
     );
 
     _agents['default'] = defaultAgent;
+    print('AgentService: Default agent created with ${tools.length} tools');
   }
 
   /// Create an agent with custom configuration
