@@ -1,6 +1,7 @@
 import 'package:langchain_core/tools.dart';
 import 'platform_tools.dart';
 import 'native_tools.dart';
+import 'search_tools.dart';
 
 /// Manages built-in tools and provides them to agents
 class BuiltInToolsManager {
@@ -22,6 +23,17 @@ class BuiltInToolsManager {
       TextProcessorTool(),
       PlatformInfoTool(),
     ]);
+
+    // Register search tools (available on all platforms)
+    if (WebSearchTool.isAvailable()) {
+      _allTools.add(WebSearchTool());
+      print('Added WebSearchTool');
+    }
+
+    if (KnowledgeBaseTool.isAvailable()) {
+      _allTools.add(KnowledgeBaseTool());
+      print('Added KnowledgeBaseTool');
+    }
 
     // Register platform-specific tools
     if (FileSystemTool.isAvailable()) {
