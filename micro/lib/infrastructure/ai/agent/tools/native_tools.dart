@@ -4,7 +4,7 @@ import 'package:langchain_core/tools.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// File System tool - Desktop and Mobile only
-class FileSystemTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class FileSystemTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   FileSystemTool()
       : super(
           name: 'filesystem',
@@ -101,7 +101,7 @@ class FileSystemTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
 }
 
 /// System Info tool - Desktop and Mobile
-class SystemInfoTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class SystemInfoTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   SystemInfoTool()
       : super(
           name: 'system_info',

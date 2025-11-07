@@ -4,7 +4,7 @@ import 'package:langchain_google/langchain_google.dart';
 /// Web Search Tool using Google Search (via Gemini grounding when available)
 /// Note: This is a placeholder that demonstrates the pattern.
 /// Actual implementation would need proper API configuration.
-class WebSearchTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class WebSearchTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   WebSearchTool()
       : super(
           name: 'web_search',
@@ -60,7 +60,7 @@ Requested $numResults results for query: $query
 }
 
 /// Knowledge Base Tool - searches local knowledge/documents
-class KnowledgeBaseTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class KnowledgeBaseTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   KnowledgeBaseTool()
       : super(
           name: 'knowledge_base',

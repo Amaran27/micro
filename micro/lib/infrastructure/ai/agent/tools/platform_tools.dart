@@ -25,7 +25,7 @@ class PlatformInfo {
 }
 
 /// Calculator tool - works on all platforms
-class CalculatorTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class CalculatorTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   CalculatorTool()
       : super(
           name: 'calculator',
@@ -83,7 +83,7 @@ class CalculatorTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
 }
 
 /// DateTime tool - works on all platforms
-class DateTimeTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class DateTimeTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   DateTimeTool()
       : super(
           name: 'datetime',
@@ -134,7 +134,7 @@ class DateTimeTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
 }
 
 /// Text processing tool - works on all platforms
-class TextProcessorTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class TextProcessorTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   TextProcessorTool()
       : super(
           name: 'text_processor',
@@ -187,7 +187,7 @@ class TextProcessorTool extends Tool<Map<String, dynamic>, ToolOptions, String> 
 }
 
 /// Platform info tool - reports platform capabilities
-class PlatformInfoTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
+final class PlatformInfoTool extends Tool<Map<String, dynamic>, ToolOptions, String> {
   PlatformInfoTool()
       : super(
           name: 'platform_info',
