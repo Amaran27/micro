@@ -34,9 +34,9 @@
 </head>
 <body>
   <script>
-    // Force HTML renderer to avoid CanvasKit loading issues
+    // Force CanvasKit with local bundle (no CDN)
     window.flutterConfiguration = {
-      renderer: "html"
+      canvasKitBaseUrl: "/canvaskit/"
     };
   </script>
   <script src="flutter_bootstrap.js" async></script>
