@@ -14,6 +14,12 @@ enum MessageType {
 
   /// Typing indicator
   typing,
+
+  /// Tool execution message
+  tool,
+
+  /// Autonomous agent action
+  autonomous,
 }
 
 /// Message status for tracking
@@ -263,6 +269,12 @@ class ChatMessage {
 
   /// Check if message is an error
   bool get isErrorMessage => type == MessageType.error;
+
+  /// Check if message is a tool execution
+  bool get isToolExecution => type == MessageType.tool;
+
+  /// Check if message is an autonomous action
+  bool get isAutonomousAction => type == MessageType.autonomous;
 
   /// Check if message is a typing indicator
   bool get isTypingIndicator => type == MessageType.typing;
