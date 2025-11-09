@@ -21,6 +21,9 @@ class AIProviderConfig {
 
   bool _isInitialized = false;
 
+  /// Check if the configuration has been initialized
+  bool get isInitialized => _isInitialized;
+
   /// Initialize AI providers with API keys from secure storage
   Future<void> initialize(
       {ModelSelectionService? modelSelectionService}) async {
@@ -40,11 +43,12 @@ class AIProviderConfig {
       // Load configurations from secure storage
       await _loadAllConfigurations();
 
-      // Initialize providers
-      await _initializeAllProviders();
+      // REMOVED: Eager initialization of all providers
+      // Now using lazy initialization - providers are created only when needed
+      // await _initializeAllProviders();
 
       _isInitialized = true;
-      _logger.info('AI Provider Configuration initialized successfully');
+      _logger.info('AI Provider Configuration initialized successfully (lazy loading enabled)');
     } catch (e) {
       _logger.error('Failed to initialize AI providers', error: e);
       // Continue without AI capabilities
@@ -244,9 +248,34 @@ class AIProviderConfig {
     return _activeProviders.containsKey(_canonicalProviderId(providerId));
   }
 
-  /// Get a specific provider by ID
-  ProviderAdapter? getProvider(String providerId) {
-    return _activeProviders[_canonicalProviderId(providerId)];
+  /// Get a specific provider by ID (with lazy initialization)
+  Future<ProviderAdapter?> getProvider(String providerId) async {
+    final canonicalId = _canonicalProviderId(providerId);
+    
+    // Return cached provider if already initialized
+    if (_activeProviders.containsKey(canonicalId)) {
+      return _activeProviders[canonicalId];
+    }
+    
+    // Lazy initialization: create provider on first use
+    _logger.info('Lazy initializing provider: $canonicalId');
+    
+    final config = _providerConfigs[canonicalId];
+    if (config == null) {
+      _logger.warning('No configuration found for provider: $canonicalId');
+      return null;
+    }
+    
+    try {
+      final adapter = await _initializeProvider(canonicalId, config);
+      if (adapter != null) {
+        _logger.info('Successfully lazy initialized provider: $canonicalId');
+      }
+      return adapter;
+    } catch (e) {
+      _logger.error('Failed to lazy initialize provider: $canonicalId', error: e);
+      return null;
+    }
   }
 
   /// Refresh provider configurations

@@ -40,6 +40,9 @@ class ModelSelectionService {
 
   bool _isInitialized = false;
 
+  /// Check if the service has been initialized
+  bool get isInitialized => _isInitialized;
+
   /// Initialize the model selection service
   Future<void> initialize() async {
     if (_isInitialized) return;

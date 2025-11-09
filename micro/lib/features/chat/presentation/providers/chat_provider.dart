@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:langchain/langchain.dart';
 import 'package:micro/features/chat/domain/usecases/send_message_usecase.dart';
 import 'package:micro/infrastructure/ai/ai_provider_config.dart';
@@ -11,14 +13,15 @@ import 'package:micro/infrastructure/ai/adapters/chat_openai_adapter.dart';
 import 'package:micro/features/chat/data/sources/llm_data_source.dart';
 import 'package:micro/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:micro/features/chat/domain/utils/chat_message_converter.dart';
+import 'package:micro/infrastructure/ai/model_selection_service.dart';
+import 'package:micro/core/utils/logger.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
-import 'package:micro/presentation/providers/provider_config_providers.dart';
-import 'package:micro/infrastructure/ai/provider_config_model.dart';
+
+
 import 'package:micro/infrastructure/ai/mcp/mcp_service.dart';
 import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
 import 'package:micro/infrastructure/ai/agent/agent_service.dart';
 import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
-import 'package:micro/infrastructure/ai/agent/plan_execute_agent.dart';
 import 'dart:convert';
 
 /// Routing decision returned by LLM classification for swarm usage.
@@ -73,6 +76,12 @@ final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>(
 class ChatNotifier extends StateNotifier<ChatState> {
   final AIProviderConfig _aiProviderConfig;
   final Ref _ref;
+  
+  // Performance optimization: Cache adapter by exact provider+model combination
+  final Map<String, ProviderAdapter> _adapterCache = {};  // "providerId:modelId" -> adapter
+  final Map<String, DateTime> _adapterCacheTime = {};     // "providerId:modelId" -> timestamp
+  static const Duration _adapterCacheExpiry = Duration(minutes: 5);
+  
   MCPService? _mcpService;
   AgentService? _agentService;
   String? _pendingTypingId;
@@ -83,13 +92,144 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   Future<void> _initializeAIProvider() async {
-    await _aiProviderConfig.initialize();
+    // Only initialize once, check if already initialized
+    if (!_aiProviderConfig.isInitialized) {
+      await _aiProviderConfig.initialize();
+    }
   }
 
   void _initializeAgentServices() {
     // Initialize MCP and Agent services
     _mcpService = MCPService();
     _agentService = AgentService(mcpService: _mcpService!);
+  }
+
+  /// True reactive provider+model caching using AIProviderConfig
+  Future<ProviderAdapter?> _getOptimizedAdapter() async {
+    final now = DateTime.now();
+    
+    try {
+      // Fast path: Use AIProviderConfig's active models (already loaded during initialization)
+      final activeModels = _aiProviderConfig.getAllActiveModels();
+      
+      if (activeModels.isEmpty) {
+        // Only fallback to ModelSelectionService if absolutely necessary
+        final modelService = ModelSelectionService.instance;
+        if (!modelService.isInitialized) {
+          await modelService.initialize();
+        }
+        final fallbackModels = modelService.getAllActiveModels();
+        if (fallbackModels.isEmpty) {
+          if (kDebugMode) print('DEBUG: No active models found');
+          return null;
+        }
+        return await _selectOptimalProvider(fallbackModels);
+      }
+      
+      return await _selectOptimalProvider(activeModels);
+    } catch (e) {
+      AppLogger().error('Error getting optimized adapter', error: e);
+      return null;
+    }
+  }
+
+  /// Select the provider based on user's current selection
+  Future<ProviderAdapter?> _selectOptimalProvider(Map<String, String> activeModels) async {
+    // Get the user's current selected model from UI
+    final currentSelectedModel = await _getCurrentUserSelectedModel();
+    
+    if (currentSelectedModel != null && activeModels.isNotEmpty) {
+      // Find which provider matches the user's selected model
+      for (final entry in activeModels.entries) {
+        if (entry.value == currentSelectedModel) {
+          final provider = entry.key;
+          final model = entry.value;
+          if (kDebugMode) print('DEBUG: Using user selected provider+model: $provider:$model');
+          return await _getAdapterForProvider(provider, model);
+        }
+      }
+      
+      // If exact model match not found, use the provider that has the user's selected model
+      final userProvider = _detectProviderFromModel(currentSelectedModel);
+      if (activeModels.containsKey(userProvider)) {
+        final model = activeModels[userProvider]!;
+        if (kDebugMode) print('DEBUG: using user provider: $userProvider with model: $model');
+        return await _getAdapterForProvider(userProvider, model);
+      }
+    }
+    
+    // No user selection found, return null (no fallback)
+    if (kDebugMode) print('DEBUG: No user selection found, returning null');
+    return null;
+  }
+
+  /// Get adapter for specific provider and model with caching
+  Future<ProviderAdapter?> _getAdapterForProvider(String providerId, String modelId) async {
+    final now = DateTime.now();
+    final cacheKey = '$providerId:$modelId';
+    
+    if (kDebugMode) print('DEBUG: Using provider+model: $cacheKey');
+    
+    // Check cache first
+    if (_adapterCache.containsKey(cacheKey)) {
+      final cacheTime = _adapterCacheTime[cacheKey] ?? DateTime.now();
+      if (now.difference(cacheTime) < _adapterCacheExpiry) {
+        final cachedAdapter = _adapterCache[cacheKey];
+        if (kDebugMode) print('DEBUG: Using cached adapter: $cacheKey');
+        return cachedAdapter;
+      } else {
+        // Cache expired, remove it
+        _adapterCache.remove(cacheKey);
+        _adapterCacheTime.remove(cacheKey);
+      }
+    }
+    
+    // Get adapter for the provider (async with lazy initialization)
+    var adapter = await _aiProviderConfig.getProvider(providerId);
+    if (kDebugMode) print('DEBUG: _getOptimizedAdapter() - adapter from getProvider: ${adapter?.runtimeType}');
+    
+    if (adapter != null && adapter.currentModel != modelId) {
+      if (kDebugMode) print('DEBUG: _getOptimizedAdapter() - switching model from ${adapter.currentModel} to $modelId');
+      // Update adapter to use current model
+      await adapter.switchModel(modelId);
+    }
+    
+    // Cache the adapter if valid
+    if (adapter != null && adapter.isInitialized) {
+      _adapterCache[cacheKey] = adapter;
+      _adapterCacheTime[cacheKey] = now;
+      if (kDebugMode) print('DEBUG: Cached new adapter: $cacheKey');
+      return adapter;
+    }
+    
+    if (kDebugMode) print('DEBUG: No valid adapter found for provider+model: $cacheKey');
+    return null;
+  }
+
+  /// Get the user's current selected model from UI
+  Future<String?> _getCurrentUserSelectedModel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final selectedModel = prefs.getString('last_selected_model');
+      if (kDebugMode) print('DEBUG: User current selected model: $selectedModel');
+      return selectedModel;
+    } catch (e) {
+      if (kDebugMode) print('DEBUG: Error getting user selected model: $e');
+      return null;
+    }
+  }
+
+  /// Detect provider from model name (simplified version)
+  String _detectProviderFromModel(String model) {
+    if (model.toLowerCase().contains('gemini') || model.toLowerCase().contains('google')) {
+      return 'google';
+    } else if (model.toLowerCase().contains('gpt') || model.toLowerCase().contains('openai')) {
+      return 'openai';
+    } else if (model.toLowerCase().contains('glm') || model.toLowerCase().contains('zhipu')) {
+      return 'zhipu-ai';
+    }
+    // Default to zhipu-ai for unknown models (can be removed if no fallback desired)
+    return 'zhipu-ai';
   }
 
   Future<void> sendMessage(String text,
@@ -140,173 +280,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
         return;
       }
 
-      // NORMAL MODE: Use existing provider adapters
-      // Use active models from provider config instead of deleted model_selection_notifier
-      final currentModelId = null; // No specific model selected yet
-      print('DEBUG: Using active models from provider config');
+      // NORMAL MODE: Use optimized provider adapter detection
+      final adapter = await _getOptimizedAdapter();
 
-      ProviderAdapter? adapter;
-
-      // Try to get the active model for each provider
-      final activeModels = _aiProviderConfig.getAllActiveModels();
-      print('DEBUG: Active models: $activeModels');
-
-      // Check if ZhipuAI has an active model
-      final zhipuaiModel = activeModels['zhipu-ai'];
-      if (zhipuaiModel != null) {
-        adapter = _aiProviderConfig.getProvider('zhipu-ai');
-        print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
-      }
-
-      // If no ZhipuAI model, try other providers
-      if (adapter == null) {
-        for (final entry in activeModels.entries) {
-          final providerId = entry.key;
-          final modelId = entry.value;
-          print('DEBUG: Trying provider: $providerId with model: $modelId');
-
-          adapter = _aiProviderConfig.getProvider(providerId);
-          if (adapter != null) {
-            print('DEBUG: Using provider: $providerId');
-            break;
-          }
-        }
-      }
-
-      if (currentModelId != null) {
-        // Get the provider for the selected model
-        String providerId = _detectProviderFromModel(currentModelId);
-
-        print(
-            'DEBUG: Current model ID: $currentModelId, detected provider: $providerId');
-
-        // First try to get adapter from new provider system
-        try {
-          final configsAsync = _ref.read(providersConfigProvider);
-          final configs = await configsAsync.when(
-            data: (data) async => data,
-            loading: () async => [],
-            error: (e, s) async {
-              print('DEBUG: Error reading new configs: $e');
-              return [];
-            },
-          );
-
-          if (configs.isNotEmpty) {
-            try {
-              // Find config for this provider that has this model
-              ProviderConfig? matchingConfig;
-
-              // First try to find a config with the exact model as favorite
-              for (final c in configs) {
-                if (c.providerId == providerId &&
-                    c.isEnabled &&
-                    c.testPassed &&
-                    c.favoriteModels.contains(currentModelId)) {
-                  matchingConfig = c;
-                  break;
-                }
-              }
-
-              // If not found, try to find any enabled config for this provider
-              if (matchingConfig == null) {
-                for (final c in configs) {
-                  if (c.providerId == providerId && c.isEnabled) {
-                    matchingConfig = c;
-                    break;
-                  }
-                }
-              }
-
-              if (matchingConfig != null) {
-                print(
-                    'DEBUG: Found new provider config: ${matchingConfig.providerId}');
-
-                // Create adapter for this provider
-                adapter = await _createAdapterFromConfig(
-                    matchingConfig, currentModelId);
-                print(
-                    'DEBUG: Created adapter from new config: ${adapter?.providerId}');
-              } else {
-                print(
-                    'DEBUG: No matching config found for provider: $providerId');
-              }
-            } catch (e) {
-              print('DEBUG: Error finding config: $e');
-            }
-          }
-        } catch (e) {
-          print('DEBUG: Error reading new provider configs: $e');
-        }
-
-        // Fallback to old system if new system didn't provide adapter
-        if (adapter == null) {
-          adapter = _aiProviderConfig.getProvider(providerId);
-          print(
-              'DEBUG: Fallback to old provider system adapter: ${adapter?.providerId}');
-        }
-
-        print(
-            'DEBUG: Final adapter: ${adapter?.providerId}, current model: ${adapter?.currentModel}');
-
-        // If we couldn't get an adapter or it doesn't have the right model, try direct provider lookup
-        if (adapter == null || adapter.currentModel != currentModelId) {
-          if (currentModelId.toLowerCase().startsWith('glm-')) {
-            adapter = _aiProviderConfig.getProvider('zhipu-ai');
-            print('DEBUG: Using direct ZhipuAI provider for GLM model');
-          } else if (currentModelId.toLowerCase().startsWith('gemini-')) {
-            adapter = _aiProviderConfig.getProvider('google');
-            print('DEBUG: Using direct Google provider for Gemini model');
-          }
-        }
-
-        // Switch to the selected model if different from current
-        final currentAdapter = adapter;
-        if (currentAdapter != null &&
-            currentAdapter.currentModel != currentModelId) {
-          await currentAdapter.switchModel(currentModelId);
-          print('DEBUG: Switched adapter to model: $currentModelId');
-        }
-      }
-
-      // Fallback to any available provider if we couldn't get a specific one
-      if (adapter == null) {
-        // If no specific model is selected, try to use the active ZhipuAI model
-        if (currentModelId == null) {
-          final activeModels = _aiProviderConfig.getAllActiveModels();
-          print('DEBUG: Active models when no currentModelId: $activeModels');
-
-          // Check if ZhipuAI has an active model
-          final zhipuaiModel = activeModels['zhipuai'];
-          if (zhipuaiModel != null) {
-            adapter = _aiProviderConfig.getProvider('zhipuai');
-            print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
-          } else {
-            // Try Google as fallback
-            final googleModel = activeModels['google'];
-            if (googleModel != null) {
-              adapter = _aiProviderConfig.getProvider('google');
-              print('DEBUG: Using active Google model: $googleModel');
-            }
-          }
-        }
-        // Otherwise try to get a provider based on the current model prefix
-        else if (currentModelId.toLowerCase().startsWith('glm-')) {
-          adapter = _aiProviderConfig.getProvider('zhipuai');
-          print(
-              'DEBUG: Fallback to ZhipuAI adapter for GLM model: $currentModelId');
-        } else if (currentModelId.toLowerCase().startsWith('gemini-')) {
-          adapter = _aiProviderConfig.getProvider('google');
-          print(
-              'DEBUG: Using Google adapter for Gemini model: $currentModelId');
-        } else {
-          // For any other model, try to detect the provider
-          final detectedProvider = _detectProviderFromModel(currentModelId);
-          adapter = _aiProviderConfig.getProvider(detectedProvider);
-          print(
-              'DEBUG: Using detected provider $detectedProvider for model: $currentModelId');
-        }
-      }
+      
 
       final finalAdapter = adapter;
       if (finalAdapter != null && finalAdapter.isInitialized) {
@@ -474,61 +451,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  /// Detect provider from model ID
-  String _detectProviderFromModel(String? modelId) {
-    if (modelId == null) return 'google'; // Default fallback
-
-    final lowerModelId = modelId.toLowerCase();
-
-    // OpenAI models
-    if (lowerModelId.startsWith('gpt-') ||
-        lowerModelId.startsWith('o1-') ||
-        lowerModelId.startsWith('dall-') ||
-        lowerModelId.startsWith('whisper-') ||
-        lowerModelId.startsWith('tts-')) {
-      return 'openai';
-    }
-
-    // Anthropic Claude models
-    if (lowerModelId.startsWith('claude-')) {
-      return 'claude';
-    }
-
-    // Google models
-    if (lowerModelId.startsWith('gemini-') ||
-        lowerModelId.startsWith('palm-') ||
-        lowerModelId.startsWith('bard-')) {
-      return 'google';
-    }
-
-    // ZhipuAI models
-    if (lowerModelId.startsWith('glm-') ||
-        lowerModelId.startsWith('chatglm-')) {
-      return 'zhipu-ai';
-    }
-
-    // Cohere models
-    if (lowerModelId.startsWith('command-') ||
-        lowerModelId.startsWith('base-') ||
-        lowerModelId.startsWith('embed-')) {
-      return 'cohere';
-    }
-
-    // Mistral models
-    if (lowerModelId.startsWith('mistral-') ||
-        lowerModelId.startsWith('codestral')) {
-      return 'mistral';
-    }
-
-    // Stability AI models
-    if (lowerModelId.contains('stable-diffusion') ||
-        lowerModelId.contains('sdxl')) {
-      return 'stability';
-    }
-
-    // Default to Google for unknown models
-    return 'google';
-  }
+  
 
   /// Execute swarm mode with multiple specialists
   Future<void> _executeSwarmMode(String userMessage) async {
@@ -549,10 +472,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // Try ZhipuAI first, then others
       final zhipuaiModel = activeModels['zhipu-ai'];
       if (zhipuaiModel != null) {
-        adapter = _aiProviderConfig.getProvider('zhipu-ai');
+        adapter = await _aiProviderConfig.getProvider('zhipu-ai');
       } else {
         for (final entry in activeModels.entries) {
-          adapter = _aiProviderConfig.getProvider(entry.key);
+          adapter = await _aiProviderConfig.getProvider(entry.key);
           if (adapter != null) break;
         }
       }

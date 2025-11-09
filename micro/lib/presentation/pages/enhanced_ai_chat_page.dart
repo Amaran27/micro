@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_gen_ai_chat_ui/flutter_gen_ai_chat_ui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
-import 'package:micro/features/chat/presentation/providers/chat_provider.dart';
+import '../../features/chat/presentation/providers/chat_provider.dart';
 import 'package:micro/presentation/providers/app_providers.dart';
 import 'package:micro/infrastructure/ai/provider_registry.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
