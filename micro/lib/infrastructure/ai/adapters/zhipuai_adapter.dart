@@ -1,29 +1,23 @@
-import 'dart:convert';
-import 'package:dio/dio.dart';
-import 'package:langchain/langchain.dart';
+﻿import 'package:langchain/langchain.dart';
+import 'package:langchain_openai/langchain_openai.dart';
 import '../interfaces/provider_adapter.dart';
 import '../interfaces/provider_config.dart';
-import '../providers/chat_zhipuai.dart';
-import '../providers/zhipuai_provider.dart';
 import '../../../domain/models/chat/chat_message.dart' as micro;
 import '../../../core/utils/logger.dart';
 
-/// Adapter for ZhipuAI GLM models
-/// Uses LangChain's SimpleChatModel-based ChatZhipuAI implementation
+/// Simplified adapter for ZhipuAI GLM models
+/// Uses LangChain's ChatOpenAI with custom baseUrl (coding endpoint)
+/// ZhipuAI API is OpenAI-compatible, no need for custom implementation
 class ZhipuAIAdapter implements ProviderAdapter {
   final AppLogger _logger = AppLogger();
-  final Dio _dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 120),
-      sendTimeout: const Duration(seconds: 20),
-    ),
-  );
-  ChatZhipuAI? _chatModel;
-  ZhipuAIProvider? _zhipuaiProvider;
-  String _currentModel = 'glm-4.6';
+  ChatOpenAI? _chatModel;
+  String _currentModel = 'glm-4.5-flash';
   bool _isInitialized = false;
-  String? _apiKey;
+
+  // ZhipuAI coding endpoint (OpenAI-compatible, optimized for code tasks)
+  static const String _codingBaseUrl = 'https://api.z.ai/api/coding/paas/v4';
+  // General endpoint (for non-coding tasks)
+  static const String _generalBaseUrl = 'https://api.z.ai/api/paas/v4';
 
   @override
   String get providerId => 'zhipu-ai';
@@ -40,44 +34,36 @@ class ZhipuAIAdapter implements ProviderAdapter {
   @override
   Future<void> initialize(ProviderConfig config) async {
     try {
-      // Type-safe configuration with validation in constructor
       if (config is! ZhipuAIConfig) {
         throw ArgumentError(
             'Expected ZhipuAIConfig, got ${config.runtimeType}');
       }
 
       _currentModel = config.model;
+      final apiKey = config.apiKey;
 
-      // Get API key directly from config (new storage system)
-      // Use API key provided via config (already persisted in secure storage
-      // by ProviderStorageService). Avoid re-reading legacy stores here to
-      // prevent mismatches with the Test Connection flow.
-      _apiKey = config.apiKey;
-      if (_apiKey == null || _apiKey!.isEmpty) {
+      if (apiKey.isEmpty) {
         throw Exception('ZhipuAI API key not provided in config');
       }
 
-      // Log masked key details for diagnostics
-      final masked = _apiKey!.length > 8
-          ? '${_apiKey!.substring(0, 4)}...${_apiKey!.substring(_apiKey!.length - 4)}'
-          : '****';
-      _logger.info(
-          'Using ZhipuAI API key from config (len=${_apiKey!.length}): $masked');
+      // Choose endpoint based on config
+      final baseUrl =
+          config.useCodingEndpoint ? _codingBaseUrl : _generalBaseUrl;
+      final endpointType = config.useCodingEndpoint ? 'coding' : 'general';
 
-      // Create LangChain ChatZhipuAI model
-      _chatModel = ChatZhipuAI(
-        apiKey: _apiKey!,
-        model: _currentModel,
-        defaultOptions: const ChatZhipuAIOptions(
+      // Use ChatOpenAI with custom baseUrl (ZhipuAI is OpenAI-compatible)
+      _chatModel = ChatOpenAI(
+        apiKey: apiKey,
+        baseUrl: baseUrl,
+        defaultOptions: ChatOpenAIOptions(
+          model: _currentModel,
           temperature: 0.7,
         ),
       );
 
-      _zhipuaiProvider = ZhipuAIProvider();
-
       _isInitialized = true;
       _logger.info(
-          'ZhipuAI adapter initialized successfully with model: $_currentModel');
+          'ZhipuAI adapter initialized with model: $_currentModel ($endpointType endpoint)');
     } catch (e) {
       _logger.error('Failed to initialize ZhipuAI adapter', error: e);
       _isInitialized = false;
@@ -97,115 +83,17 @@ class ZhipuAIAdapter implements ProviderAdapter {
     _logger.info('ZhipuAI adapter sending message with model: $_currentModel');
 
     try {
-      // Convert micro messages to LangChain ChatMessages
-      // Note: history already contains all messages including the current user message
       final messages = _convertHistoryToLangchain(history);
+      messages.add(ChatMessage.humanText(text));
 
-      // Create prompt and invoke model
       final prompt = PromptValue.chat(messages);
       final response = await _chatModel!.invoke(prompt);
 
-      return _convertResponseToMicro(response.output);
+      return _convertResponseToMicro(response.output.content);
     } catch (e) {
       _logger.error('Error sending message to ZhipuAI', error: e);
-
-      // Log detailed error information for debugging
-      _logger.error('Full error toString: ${e.toString()}');
-      if (e is Exception) {
-        _logger.error('Exception type: ${e.runtimeType}');
-      }
-
-      // Convert common ZhipuAI errors to user-friendly messages
-      String errorMessage;
-
-      // Check for ZhipuAI API error codes in response body
-      if (e is Exception && e.toString().contains('1113')) {
-        errorMessage =
-            'Your ZhipuAI account has insufficient balance. Please recharge your account to continue using this provider.';
-      } else if (e.toString().contains('code: 1000') ||
-          e.toString().toLowerCase().contains('authorization failure')) {
-        errorMessage =
-            'ZhipuAI Authorization Failure (code 1000). Please verify that your API key is valid for api.z.ai (PaaS) and that the selected model is enabled for your account. Try regenerating the key or testing the connection in Settings.';
-      } else if (e is ZhipuAIAuthenticationException ||
-          e.toString().contains('401') ||
-          e.toString().contains('令牌已过期') ||
-          e.toString().contains('token') ||
-          e.toString().contains('API key format')) {
-        errorMessage =
-            'ZhipuAI authentication failed. Please update your API key in settings. '
-            'ZhipuAI keys should be 49+ characters with a dot (.) separator.';
-      } else if (e.toString().contains('RateLimitException')) {
-        errorMessage =
-            'ZhipuAI rate limit exceeded. Please wait a moment and try again.';
-      } else if (e.toString().contains('429')) {
-        // 429 could be rate limit or billing issue, check response body
-        if (e.toString().contains('Insufficient balance') ||
-            e.toString().contains('no resource package')) {
-          errorMessage =
-              'Your ZhipuAI account has insufficient balance. Please recharge your account to continue using this provider.';
-        } else {
-          errorMessage =
-              'ZhipuAI service temporarily unavailable. Please try again later.';
-        }
-      } else if (e.toString().contains('network') ||
-          e.toString().contains('connection')) {
-        errorMessage =
-            'Network connection issue. Please check your internet connection and try again.';
-      } else {
-        errorMessage =
-            'Sorry, I encountered an error while processing your message. Please try again.';
-      }
-
-      return micro.ChatMessage.assistant(
-        id: DateTime.now().toIso8601String(),
-        content: errorMessage,
-      );
+      return _buildErrorMessage(e);
     }
-  }
-
-  @override
-  Future<bool> switchModel(String newModel) async {
-    if (!_isInitialized || _chatModel == null) return false;
-
-    try {
-      _currentModel = newModel;
-      // Recreate the chat model with the new model ID
-      _chatModel = ChatZhipuAI(
-        apiKey: _apiKey!,
-        model: newModel,
-        defaultOptions: const ChatZhipuAIOptions(
-          temperature: 0.7,
-        ),
-      );
-      _logger.info('ZhipuAI model switched to: $newModel');
-      return true;
-    } catch (e) {
-      _logger.error('Failed to switch ZhipuAI model', error: e);
-      return false;
-    }
-  }
-
-  @override
-  Future<List<String>> getAvailableModels() async {
-    try {
-      if (_zhipuaiProvider != null) {
-        final models = await _zhipuaiProvider!.getAvailableModels();
-        return models.map((model) => model.modelId).toList();
-      }
-    } catch (e) {
-      _logger.error('Error getting ZhipuAI models', error: e);
-    }
-
-    // Return current ZhipuAI models as fallback
-    return [
-      'glm-4.6',
-      'glm-4.5-flash',
-      'glm-4.5v',
-      'glm-4-flash',
-      'glm-4-air',
-      'glm-4-long',
-      'glm-3-turbo',
-    ];
   }
 
   @override
@@ -221,65 +109,16 @@ class ZhipuAIAdapter implements ProviderAdapter {
         .info('ZhipuAI adapter streaming message with model: $_currentModel');
 
     try {
-      // Convert micro messages to OpenAI-compatible format (like Roo Code)
-      final messages = _convertHistoryToOpenAIFormat(history);
+      final messages = _convertHistoryToLangchain(history);
+      messages.add(ChatMessage.humanText(text));
 
-      // Use simplified streaming approach similar to Roo Code
-      final requestData = {
-        'model': _currentModel,
-        'messages': messages,
-        'stream': true,
-        'stream_options': {'include_usage': true},
-        'temperature': 0.7,
-      };
+      final prompt = PromptValue.chat(messages);
+      final stream = _chatModel!.stream(prompt);
 
-      final response = await _dio.post<ResponseBody>(
-        'https://api.z.ai/api/paas/v4/chat/completions',
-        data: requestData,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $_apiKey',
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
-          },
-          responseType: ResponseType.stream,
-        ),
-      );
-
-      final stream = response.data?.stream;
-      if (stream == null) {
-        throw Exception('No stream in response');
-      }
-
-      // Parse SSE like standard OpenAI streaming (fixed parsing)
-      await for (final event in stream
-          .map((bytes) => utf8.decode(bytes))
-          .transform(const LineSplitter())) {
-        _logger.info('ZhipuAI streaming: raw event: "$event"');
-        if (event.startsWith('data: ')) {
-          final data = event.substring(6).trim();
-          _logger.info('ZhipuAI streaming: extracted data: "$data"');
-          if (data.isEmpty || data == '[DONE]') {
-            continue;
-          }
-          try {
-            final decoded = jsonDecode(data) as Map<String, dynamic>;
-            _logger.info('ZhipuAI streaming: decoded JSON: $decoded');
-            final choices = decoded['choices'] as List?;
-            if (choices != null && choices.isNotEmpty) {
-              final delta = choices[0]['delta'];
-              if (delta != null && delta['content'] != null) {
-                final content = delta['content'] as String;
-                if (content.isNotEmpty) {
-                  _logger
-                      .info('ZhipuAI streaming: yielding content: "$content"');
-                  yield content;
-                }
-              }
-            }
-          } catch (e) {
-            _logger.warning('SSE JSON decode failed: $e. Data: "$data"');
-          }
+      await for (final chunk in stream) {
+        final content = chunk.output.content;
+        if (content.isNotEmpty) {
+          yield content;
         }
       }
     } catch (e) {
@@ -289,37 +128,46 @@ class ZhipuAIAdapter implements ProviderAdapter {
   }
 
   @override
+  Future<bool> switchModel(String newModel) async {
+    if (!_isInitialized) return false;
+
+    try {
+      _currentModel = newModel;
+      _logger.info('ZhipuAI model switched to: $newModel');
+      return true;
+    } catch (e) {
+      _logger.error('Failed to switch ZhipuAI model', error: e);
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> getAvailableModels() async {
+    return [
+      'glm-4-plus',
+      'glm-4.5-flash',
+      'glm-4.6',
+      'glm-4.5',
+      'glm-4.5-air',
+      'glm-4-flash',
+      'glm-4-air',
+      'glm-4-long',
+      'glm-3-turbo',
+    ];
+  }
+
+  @override
+  BaseChatModel? getLangChainModel() {
+    return _chatModel;
+  }
+
+  @override
   void dispose() {
     _chatModel?.close();
     _chatModel = null;
-    _zhipuaiProvider = null;
-    _apiKey = null;
     _isInitialized = false;
   }
 
-  /// Convert micro ChatMessages to OpenAI-compatible format (like Roo Code)
-  List<Map<String, String>> _convertHistoryToOpenAIFormat(
-    List<micro.ChatMessage> history,
-  ) {
-    final messages = <Map<String, String>>[];
-    for (final msg in history) {
-      String role;
-      if (msg.isFromUser) {
-        role = 'user';
-      } else if (msg.isFromAssistant) {
-        role = 'assistant';
-      } else {
-        role = 'system';
-      }
-      messages.add({
-        'role': role,
-        'content': msg.content,
-      });
-    }
-    return messages;
-  }
-
-  /// Convert micro ChatMessages to LangChain ChatMessages
   List<ChatMessage> _convertHistoryToLangchain(
     List<micro.ChatMessage> history,
   ) {
@@ -336,11 +184,43 @@ class ZhipuAIAdapter implements ProviderAdapter {
     return messages;
   }
 
-  /// Convert ZhipuAI response to micro ChatMessage
   micro.ChatMessage _convertResponseToMicro(String responseContent) {
     return micro.ChatMessage.assistant(
       id: DateTime.now().toIso8601String(),
       content: responseContent,
+    );
+  }
+
+  micro.ChatMessage _buildErrorMessage(Object error) {
+    String errorMessage;
+
+    if (error.toString().contains('1113')) {
+      errorMessage =
+          'Your ZhipuAI account has insufficient balance. Please recharge your account to continue using this provider.';
+    } else if (error.toString().contains('code: 1000') ||
+        error.toString().toLowerCase().contains('authorization failure')) {
+      errorMessage =
+          'ZhipuAI Authorization Failure (code 1000). Please verify that your API key is valid and that the selected model is enabled for your account.';
+    } else if (error.toString().contains('401') ||
+        error.toString().contains('authentication')) {
+      errorMessage =
+          'ZhipuAI authentication failed. Please update your API key in settings.';
+    } else if (error.toString().contains('RateLimitException') ||
+        error.toString().contains('429')) {
+      errorMessage =
+          'ZhipuAI rate limit exceeded. Please wait a moment and try again.';
+    } else if (error.toString().contains('network') ||
+        error.toString().contains('connection')) {
+      errorMessage =
+          'Network connection issue. Please check your internet connection and try again.';
+    } else {
+      errorMessage =
+          'Sorry, I encountered an error while processing your message. Please try again.';
+    }
+
+    return micro.ChatMessage.assistant(
+      id: DateTime.now().toIso8601String(),
+      content: errorMessage,
     );
   }
 }

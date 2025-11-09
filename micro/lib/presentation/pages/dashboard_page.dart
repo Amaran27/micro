@@ -159,13 +159,14 @@ class DashboardPage extends ConsumerWidget {
                             color: Colors.orange,
                             onTap: () => context.go('/simple-tools'),
                           ),
-                          _QuickActionCard(
-                            icon: Icons.smart_toy,
-                            title: 'Agents',
-                            subtitle: 'Manage agents',
-                            color: Colors.purple,
-                            onTap: () => context.go('/agents'),
-                          ),
+                          // Agents hidden per Swarm-first product direction
+                          // _QuickActionCard(
+                          //   icon: Icons.smart_toy,
+                          //   title: 'Agents',
+                          //   subtitle: 'Manage agents',
+                          //   color: Colors.purple,
+                          //   onTap: () => context.go('/agents'),
+                          // ),
                           _QuickActionCard(
                             icon: Icons.account_tree,
                             title: 'Workflows',

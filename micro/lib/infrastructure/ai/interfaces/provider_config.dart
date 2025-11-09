@@ -25,9 +25,13 @@ class ZhipuAIConfig implements ProviderConfig {
   @override
   final String apiKey;
 
+  /// Whether to use the coding-optimized endpoint instead of general endpoint
+  final bool useCodingEndpoint;
+
   ZhipuAIConfig({
     required this.model,
     required this.apiKey,
+    this.useCodingEndpoint = true, // Default to coding endpoint
   }) {
     if (apiKey.isEmpty) {
       throw ArgumentError('API key cannot be empty');
@@ -42,11 +46,13 @@ class ZhipuAIConfig implements ProviderConfig {
         'providerId': providerId,
         'model': model,
         'apiKey': apiKey,
+        'useCodingEndpoint': useCodingEndpoint,
       };
 
   factory ZhipuAIConfig.fromMap(Map<String, dynamic> map) => ZhipuAIConfig(
         model: map['model'] as String,
         apiKey: map['apiKey'] as String,
+        useCodingEndpoint: map['useCodingEndpoint'] as bool? ?? true,
       );
 }
 

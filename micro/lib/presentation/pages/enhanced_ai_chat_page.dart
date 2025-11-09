@@ -34,7 +34,8 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   // Tracks whether\u00a0loading dialog is currently visible so we can dismiss safely.
   bool _loadingDialogVisible = false;
 
-  // Swarm-first: agent UI removed per product decision
+  // Agent and Swarm modes for different task complexities
+  bool _agentMode = false;
   bool _swarmMode = false;
 
   @override
@@ -129,17 +130,20 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
   /// Convert our app's ChatMessage to the format expected by flutter_gen_ai_chat_ui
   ChatMessage _convertToChatMessage(micro.ChatMessage message) {
+    // Attach quick replies and system flag if present in metadata
+    final quickReplies = message.metadata?['quickReplies'] as List<String>?;
+    final isSystem = message.type == micro.MessageType.system ||
+        message.metadata?['system'] == true;
     return ChatMessage(
       text: message.content,
       user: message.type == micro.MessageType.user
           ? ChatUser(id: 'user', firstName: 'You')
           : ChatUser(id: 'ai', firstName: 'AI'),
       createdAt: message.timestamp,
-      isMarkdown: message.type ==
-          micro.MessageType.assistant, // Enable markdown for AI responses
-      customProperties: message.type == micro.MessageType.assistant
-          ? {'isStreaming': true} // Enable streaming animation for AI messages
-          : null,
+      isMarkdown: true, // Use built-in markdown support
+      customProperties: {
+        if (message.type == micro.MessageType.assistant) 'isStreaming': true,
+      },
     );
   }
 

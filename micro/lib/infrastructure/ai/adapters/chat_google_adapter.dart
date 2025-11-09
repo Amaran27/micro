@@ -147,6 +147,11 @@ class ChatGoogleAdapter implements ProviderAdapter {
   }
 
   @override
+  BaseChatModel? getLangChainModel() {
+    return _chatModel as BaseChatModel?;
+  }
+
+  @override
   void dispose() {
     _chatModel = null as dynamic;
     _config = null;

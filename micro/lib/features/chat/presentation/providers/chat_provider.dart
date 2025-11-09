@@ -19,6 +19,14 @@ import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
 import 'package:micro/infrastructure/ai/agent/agent_service.dart';
 import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
 import 'package:micro/infrastructure/ai/agent/plan_execute_agent.dart';
+import 'dart:convert';
+
+/// Routing decision returned by LLM classification for swarm usage.
+class SwarmRouteDecision {
+  final bool useSwarm;
+  final int? maxSpecialists;
+  const SwarmRouteDecision({required this.useSwarm, this.maxSpecialists});
+}
 
 class ChatState {
   final List<micro.ChatMessage> messages;
@@ -67,6 +75,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   MCPService? _mcpService;
   AgentService? _agentService;
+  String? _pendingTypingId;
 
   ChatNotifier(this._aiProviderConfig, this._ref) : super(ChatState()) {
     _initializeAIProvider();
@@ -110,6 +119,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       id: placeholderId,
       userId: 'ai',
     );
+    _pendingTypingId = placeholderId;
     state = state.copyWith(
       messages: [...state.messages, typingPlaceholder],
       // Keep isLoading true
@@ -551,21 +561,61 @@ class ChatNotifier extends StateNotifier<ChatState> {
         throw Exception('No AI provider available for swarm execution');
       }
 
-      // Execute swarm using AgentService's internal default model.
-      // NOTE: Previously we attempted to wrap ProviderAdapter with a custom
-      // _SwarmLanguageModelAdapter and pass it as `languageModel` to
-      // executeSwarmGoal. That parameter expects a BaseChatModel from LangChain,
-      // not an arbitrary LanguageModel implementation. Passing the wrapper
-      // produced a runtime type error:
-      //   type '_SwarmLanguageModelAdapter' is not a subtype of type
-      //   'BaseChatModel<ChatModelOptions>?'
-      // To keep swarm mode stable, we now omit the languageModel argument so
-      // AgentService falls back to its internally created default model. A
-      // future enhancement could add an official BaseChatModel exposure from
-      // ProviderAdapter to allow provider-selected models in swarm mode.
+      // Get LangChain model from provider adapter for swarm execution
+      final langChainModel = adapter.getLangChainModel();
+      if (langChainModel == null) {
+        throw Exception(
+            'Provider ${adapter.providerId} does not support LangChain models required for Swarm');
+      }
+
+      // LLM-driven routing decision (no regex/hardcoding): decide whether to use swarm
+      final routingStart = DateTime.now();
+      final route = await _llmSwarmRoutingDecision(langChainModel, userMessage);
+      final routingDuration = DateTime.now().difference(routingStart);
+      // SWARM_METRIC: captures LLM routing latency & decision outcome (observability for trivial vs complex goals)
+      print(
+          'SWARM_METRIC phase=routing duration_ms=${routingDuration.inMilliseconds} use_swarm=${route.useSwarm} max_specialists=${route.maxSpecialists ?? -1}');
+      final useSwarm = route.useSwarm;
+      final maxSpecialists = route.maxSpecialists;
+
+      if (!useSwarm) {
+        // Route directly to the adapter for a conversational response
+        final aiResponse = await adapter.sendMessage(
+          text: userMessage,
+          history: state.messages,
+        );
+
+        // Remove typing placeholder if present
+        final updatedMessages = [
+          for (final m in state.messages)
+            if (m.id != _pendingTypingId) m,
+        ];
+        updatedMessages.add(aiResponse);
+        state = state.copyWith(messages: updatedMessages, isLoading: false);
+        _pendingTypingId = null;
+        print('DEBUG: Routed by LLM to direct response (no swarm)');
+        return;
+      }
+
+      // Execute swarm with user's selected model
+      final swarmStart = DateTime.now();
       final result = await _agentService!.executeSwarmGoal(
         goal: userMessage,
+        languageModel: langChainModel,
+        maxSpecialists: maxSpecialists,
       );
+      final swarmExecDuration = DateTime.now().difference(swarmStart);
+      try {
+        // best-effort metrics: relies on SwarmResult-like shape
+        final specialistsUsed = result.totalSpecialistsUsed;
+        final totalSecs = result.totalDuration.inSeconds;
+        // SWARM_METRIC: captures full swarm execution wall-clock latency & utilization footprint
+        print(
+            'SWARM_METRIC phase=swarm_exec duration_ms=${swarmExecDuration.inMilliseconds} specialists_used=$specialistsUsed result_duration_s=$totalSecs');
+      } catch (_) {
+        print(
+            'SWARM_METRIC phase=swarm_exec duration_ms=${swarmExecDuration.inMilliseconds}');
+      }
 
       // Format swarm response
       final responseText = _formatSwarmResponse(result);
@@ -573,10 +623,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
       final langchainBotMessage = ChatMessage.ai(responseText);
       final botMessage = convertLangchainChatMessage(langchainBotMessage);
 
-      state = state.copyWith(
-        messages: [...state.messages, botMessage],
-        isLoading: false,
-      );
+      // Remove typing placeholder then add final swarm message
+      final updatedMessages = [
+        for (final m in state.messages)
+          if (m.id != _pendingTypingId) m,
+      ];
+      updatedMessages.add(botMessage);
+      state = state.copyWith(messages: updatedMessages, isLoading: false);
+      _pendingTypingId = null;
 
       print(
           'DEBUG: Swarm execution completed - ${result.totalSpecialistsUsed} specialists');
@@ -591,6 +645,48 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// LLM-driven swarm routing decision. Returns a compact decision without any hardcoded heuristics.
+  Future<SwarmRouteDecision> _llmSwarmRoutingDecision(
+    BaseChatModel model,
+    String goal,
+  ) async {
+    final system = ChatMessage.system('''
+You are a routing controller. Decide if the user's request requires multi-agent swarm planning (multiple specialists, tool usage, decomposition) or a single direct conversational response.
+Return ONLY compact JSON with these fields and nothing else:
+{
+  "use_swarm": true|false,
+  "reason": "short reason",
+  "max_specialists": integer  
+}
+If the request is simple chit-chat or can be answered directly without planning/tools, set use_swarm to false. Do not include markdown fences or explanations.
+''');
+
+    final human = ChatMessage.human(ChatMessageContent.text('''
+USER_GOAL:
+$goal
+'''));
+
+    final response = await model.invoke(PromptValue.chat([system, human]));
+    final text = response.output.content.toString();
+
+    String jsonText = text.trim();
+    final match = RegExp(r"\{[\s\S]*\}").firstMatch(jsonText);
+    if (match != null) {
+      jsonText = match.group(0)!;
+    }
+
+    try {
+      final parsed = json.decode(jsonText) as Map<String, dynamic>;
+      final use = parsed['use_swarm'] == true;
+      final max = parsed['max_specialists'];
+      final maxInt = max is num ? max.toInt() : null;
+      return SwarmRouteDecision(useSwarm: use, maxSpecialists: maxInt);
+    } catch (_) {
+      // If parsing fails, default to using swarm to preserve functionality
+      return SwarmRouteDecision(useSwarm: true, maxSpecialists: null);
+    }
+  }
+
   /// Format swarm result for display
   String _formatSwarmResponse(dynamic swarmResult) {
     final buffer = StringBuffer();
@@ -601,15 +697,48 @@ class ChatNotifier extends StateNotifier<ChatState> {
     buffer.writeln(
         'Estimated cost: \$${swarmResult.estimatedCost.toStringAsFixed(4)}\n');
 
+    if (swarmResult.error != null && swarmResult.error!.isNotEmpty) {
+      buffer.writeln('⚠️ Planning error encountered: ${swarmResult.error}');
+      buffer.writeln('Fallback specialist used. Results may be limited.\n');
+    }
+
     buffer.writeln('### Findings:\n');
 
     // Get all facts from blackboard
     final facts = swarmResult.blackboard.getAllFacts();
+
+    // Clarification-first rendering: if clarification needed, surface questions prominently
+    try {
+      final needsClar = facts['clarification_needed'] == true;
+      if (needsClar) {
+        buffer.writeln('📝 **Clarification Required Before Planning**');
+        final reason = facts['clarification_reason']?.toString();
+        if (reason != null && reason.isNotEmpty) {
+          buffer.writeln('- Reason: $reason');
+        }
+        final questions = facts['clarification_questions'];
+        if (questions is List && questions.isNotEmpty) {
+          buffer.writeln('\nPlease answer the following to proceed:');
+          for (int i = 0; i < questions.length; i++) {
+            buffer.writeln('${i + 1}. ${questions[i]}');
+          }
+        }
+        buffer.writeln(
+            '\nAfter answering, re-submit your goal to continue with specialist planning.');
+        buffer.writeln('\n---');
+      }
+    } catch (_) {
+      // Safe ignore if unexpected data shape
+    }
+
     for (final entry in facts.entries) {
       buffer.writeln('**${entry.key}**: ${entry.value}');
     }
 
-    if (swarmResult.converged) {
+    if (swarmResult.totalSpecialistsUsed == 0 && swarmResult.error != null) {
+      buffer.writeln(
+          '\n⚠️ No specialists executed due to planning failure. Try re-running or using a different model.');
+    } else if (swarmResult.converged) {
       buffer.writeln('\n✅ Goal achieved with high confidence');
     } else {
       buffer.writeln(

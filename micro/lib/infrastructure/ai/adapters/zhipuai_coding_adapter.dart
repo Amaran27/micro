@@ -152,6 +152,11 @@ class ZhipuAICodingAdapter implements ProviderAdapter {
   }
 
   @override
+  BaseChatModel? getLangChainModel() {
+    return _chatModel as BaseChatModel?;
+  }
+
+  @override
   void dispose() {
     _chatModel?.close();
     _chatModel = null;

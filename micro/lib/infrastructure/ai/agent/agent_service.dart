@@ -10,7 +10,7 @@ import '../mcp/mcp_service.dart';
 import 'mcp_tool_adapter.dart';
 import 'swarm/swarm_orchestrator.dart';
 import 'tools/tool_registry.dart';
-import 'tools/mock_tools.dart';
+import '../../../features/swarm/tools/mobile_tools_simple.dart';
 import '../swarm_settings_service.dart';
 import 'plan_execute_agent.dart' show LanguageModel;
 
@@ -32,13 +32,24 @@ class AgentService {
 
   /// Initialize agent service
   Future<void> initialize() async {
-    // Register mock tools for swarm
-    final mockTools = getAllMockTools();
-    for (final tool in mockTools) {
+    // Register real mobile tools for swarm
+    final mobileTools = [
+      CameraTool(),
+      ContactsTool(),
+      SmsTool(),
+      PhoneTool(),
+      GpsTool(),
+      DeviceInfoTool(),
+      BatteryTool(),
+      AppLauncherTool(),
+      NotificationTool(),
+      CalendarTool(),
+    ];
+    for (final tool in mobileTools) {
       _toolRegistry.register(tool);
     }
     print(
-        'AgentService: Registered ${_toolRegistry.toolCount} mock tools for swarm');
+        'AgentService: Registered ${_toolRegistry.toolCount} real mobile tools for swarm');
 
     // Initialize tool factory if available
     if (_toolFactory != null) {

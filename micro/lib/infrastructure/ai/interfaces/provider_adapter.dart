@@ -1,5 +1,6 @@
 import '../../../domain/models/chat/chat_message.dart' as micro;
 import 'provider_config.dart';
+import 'package:langchain/langchain.dart';
 
 /// Unified interface for all AI providers
 /// This adapter pattern abstracts provider-specific implementations
@@ -39,6 +40,10 @@ abstract class ProviderAdapter {
 
   /// Get available models for this provider
   Future<List<String>> getAvailableModels();
+
+  /// Get underlying LangChain BaseChatModel for advanced use cases (e.g., Swarm)
+  /// Returns null if provider doesn't use LangChain or model not initialized
+  BaseChatModel? getLangChainModel();
 
   /// Dispose of resources
   void dispose();

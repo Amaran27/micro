@@ -1,0 +1,44 @@
+### ✅ Cloud / API-access providers
+
+1. OpenAI
+2. Anthropic
+3. Google (Vertex AI / Gemini)
+4. Microsoft (Azure OpenAI / Azure AI)
+5. Amazon (Bedrock / Titan)
+6. IBM watsonx.ai
+7. Oracle AI
+8. Salesforce (Einstein)
+9. Baidu (Ernie Bot)
+10. Alibaba (Qwen)
+11. Tencent (Hunyuan)
+12. Huawei Cloud AI
+13. Z.ai (Zhipu AI)
+14. Cohere
+15. AI21 Labs
+16. Mistral AI (hosted API available)
+17. Stability AI (DreamStudio / API)
+18. Aleph Alpha
+19. Cerebras Systems (Cloud AI)
+20. MosaicML (inference API)
+21. Together AI
+22. xAI (Grok)
+23. Inflection AI
+24. Perplexity AI
+25. ElevenLabs (voice + generative AI)
+26. RunPod
+27. CoreWeave
+28. Lambda Labs
+29. BytePlus
+
+---
+
+### ✅ Self-hostable / API or local deployment providers
+
+1. Hugging Face (hosted API + local weights)
+2. Ollama (platform + local API)
+3. LM Studio (local inference + API)
+4. GPT4All (local / self-hosted API)
+5. Oobabooga / Ooba (local API)
+6. vLLM (local inference API)
+7. Text-Generation-Inference (TGI, local API)
+
