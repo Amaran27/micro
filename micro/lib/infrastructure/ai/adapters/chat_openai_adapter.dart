@@ -17,10 +17,13 @@ class ChatOpenAIAdapter implements ProviderAdapter {
   String get providerId => 'openai';
 
   @override
-  String get currentModel => _config?.model ?? 'gpt-3.5-turbo';
+  String get currentModel => _config?.model ?? 'gpt-4o';
 
   @override
   bool get isInitialized => _isInitialized;
+
+  @override
+  bool get supportsStreaming => true;
 
   @override
   Future<void> initialize(ProviderConfig config) async {
@@ -106,6 +109,44 @@ class ChatOpenAIAdapter implements ProviderAdapter {
       'gpt-4-turbo',
       'gpt-3.5-turbo',
     ];
+  }
+
+  @override
+  Stream<String> sendMessageStream({
+    required String text,
+    required List<micro.ChatMessage> history,
+  }) async* {
+    if (!_isInitialized) {
+      throw Exception('OpenAI adapter not initialized');
+    }
+
+    _logger.info('OpenAI adapter streaming message with model: $currentModel');
+
+    try {
+      final messages = _convertHistoryToLangchain(history);
+      messages.add(ChatMessage.humanText(text));
+
+      final prompt = PromptValue.chat(messages);
+
+      // Use LangChain's stream method for token-by-token streaming
+      final stream = _chatModel.stream(
+        prompt,
+        options: ChatOpenAIOptions(
+          model: _config!.model,
+          temperature: 0.7,
+        ),
+      );
+
+      await for (final chunk in stream) {
+        final content = chunk.output.toString();
+        if (content.isNotEmpty) {
+          yield content;
+        }
+      }
+    } catch (e) {
+      _logger.error('Error streaming message from OpenAI', error: e);
+      throw Exception('Streaming error: ${e.toString()}');
+    }
   }
 
   @override

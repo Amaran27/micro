@@ -746,9 +746,9 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
                 }
 
                 return serverStatesAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (error, stack) =>
-                      _buildServerList(configs, []),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) => _buildServerList(configs, []),
                   data: (states) => _buildServerList(configs, states),
                 );
               },
@@ -777,7 +777,9 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
           config: config,
           state: state,
           onDisconnect: () async {
-            await ref.read(mcpOperationsProvider.notifier).disconnectServer(config.id);
+            await ref
+                .read(mcpOperationsProvider.notifier)
+                .disconnectServer(config.id);
           },
         );
       }).toList(),
@@ -804,7 +806,9 @@ class _AgentDashboardPageState extends ConsumerState<AgentDashboardPage>
         toolName: 'search_repos',
         status: MCPActivityStatus.success,
         parameters: {'query': 'flutter mcp'},
-        result: {'repos': ['repo1', 'repo2']},
+        result: {
+          'repos': ['repo1', 'repo2']
+        },
         durationMs: 523,
       ),
       MCPActivityLogEntry(
@@ -1305,6 +1309,7 @@ class _StepExpansionTile extends StatelessWidget {
       AgentStepType.planning => (Icons.map, Colors.blue),
       AgentStepType.reasoning => (Icons.lightbulb, Colors.purple),
       AgentStepType.toolExecution => (Icons.build, Colors.orange),
+      AgentStepType.toolUse => (Icons.construction, Colors.deepOrange),
       AgentStepType.reflection => (Icons.auto_graph, Colors.green),
       AgentStepType.finalization => (Icons.flag, Colors.teal),
       AgentStepType.errorRecovery => (Icons.error, Colors.red),

@@ -23,6 +23,9 @@ class ChatGoogleAdapter implements ProviderAdapter {
   bool get isInitialized => _isInitialized;
 
   @override
+  bool get supportsStreaming => true;
+
+  @override
   Future<void> initialize(ProviderConfig config) async {
     try {
       if (config is! GoogleConfig) {
@@ -103,6 +106,44 @@ class ChatGoogleAdapter implements ProviderAdapter {
       'gemini-1.5-flash',
       'gemini-1.0-pro',
     ];
+  }
+
+  @override
+  Stream<String> sendMessageStream({
+    required String text,
+    required List<micro.ChatMessage> history,
+  }) async* {
+    if (!_isInitialized) {
+      throw Exception('Google adapter not initialized');
+    }
+
+    _logger.info('Google adapter streaming message with model: $currentModel');
+
+    try {
+      final messages = _convertHistoryToLangchain(history);
+      messages.add(ChatMessage.humanText(text));
+
+      final prompt = PromptValue.chat(messages);
+
+      // Use LangChain's stream method for token-by-token streaming
+      final stream = _chatModel.stream(
+        prompt,
+        options: ChatGoogleGenerativeAIOptions(
+          model: _config!.model,
+          temperature: 0.7,
+        ),
+      );
+
+      await for (final chunk in stream) {
+        final content = chunk.output.toString();
+        if (content.isNotEmpty) {
+          yield content;
+        }
+      }
+    } catch (e) {
+      _logger.error('Error streaming message from Google', error: e);
+      throw Exception('Streaming error: ${e.toString()}');
+    }
   }
 
   @override

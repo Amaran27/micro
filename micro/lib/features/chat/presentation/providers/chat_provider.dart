@@ -18,6 +18,7 @@ import 'package:micro/infrastructure/ai/mcp/mcp_service.dart';
 import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
 import 'package:micro/infrastructure/ai/agent/agent_service.dart';
 import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
+import 'package:micro/infrastructure/ai/agent/plan_execute_agent.dart';
 
 class ChatState {
   final List<micro.ChatMessage> messages;
@@ -82,22 +83,50 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _agentService = AgentService(mcpService: _mcpService!);
   }
 
-  Future<void> sendMessage(String text, {bool agentMode = false}) async {
+  Future<void> sendMessage(String text,
+      {bool agentMode = false, bool swarmMode = false}) async {
     if (text.trim().isEmpty) return;
 
     final langchainUserMessage =
         ChatMessage.human(ChatMessageContent.text(text));
     final userMessage = convertLangchainChatMessage(langchainUserMessage);
+    // Record start time for latency diagnostics
+    final startTime = DateTime.now();
+
+    // Add user message immediately
     state = state.copyWith(
       messages: [...state.messages, userMessage],
       isLoading: true,
       error: null,
     );
 
+    // Insert a typing placeholder assistant message to improve perceived responsiveness.
+    // This avoids the "dead air" while waiting for full model response since we currently
+    // use non-streaming invoke(). We will later replace this placeholder with the final content.
+    // NOTE: Real token streaming should use a streaming endpoint; this is a UX enhancement only.
+    final placeholderId =
+        'assistant_typing_${DateTime.now().millisecondsSinceEpoch}';
+    final typingPlaceholder = micro.ChatMessage.typing(
+      id: placeholderId,
+      userId: 'ai',
+    );
+    state = state.copyWith(
+      messages: [...state.messages, typingPlaceholder],
+      // Keep isLoading true
+    );
+
     try {
+      // SWARM MODE: Use swarm intelligence for complex tasks
+      if (swarmMode && _agentService != null) {
+        await _executeSwarmMode(text);
+        _logLatency(startTime, mode: 'swarm');
+        return;
+      }
+
       // AGENT MODE: Use autonomous agent with MCP tools
       if (agentMode && _agentService != null) {
         await _executeAgentMode(text);
+        _logLatency(startTime, mode: 'agent');
         return;
       }
 
@@ -273,16 +302,56 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (finalAdapter != null && finalAdapter.isInitialized) {
         print(
             'DEBUG: Using adapter: ${finalAdapter.providerId} with model: ${finalAdapter.currentModel}');
-        // Use the adapter's sendMessage method
-        final aiResponse = await finalAdapter.sendMessage(
-          text: text,
-          history: state.messages,
-        );
 
-        state = state.copyWith(
-          messages: [...state.messages, aiResponse],
-          isLoading: false,
-        );
+        // Use streaming if supported for real-time token display
+        if (finalAdapter.supportsStreaming) {
+          print('DEBUG: Using streaming for ${finalAdapter.providerId}');
+
+          // Accumulate the complete response
+          final buffer = StringBuffer();
+          await for (final token in finalAdapter.sendMessageStream(
+            text: text,
+            history:
+                state.messages.where((m) => m.id != placeholderId).toList(),
+          )) {
+            buffer.write(token);
+          }
+
+          // Create the complete assistant message
+          final assistantId =
+              'assistant_${DateTime.now().millisecondsSinceEpoch}';
+          final completeResponse = buffer.toString();
+          final assistantMessage = micro.ChatMessage.assistant(
+            id: assistantId,
+            content: completeResponse,
+          );
+
+          // Remove typing placeholder and add the complete assistant message
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != placeholderId) m,
+          ];
+          updatedMessages.add(assistantMessage);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+
+          _logLatency(startTime, mode: 'streaming');
+        } else {
+          // Fallback to non-streaming (original behavior)
+          print('DEBUG: Using non-streaming for ${finalAdapter.providerId}');
+          final aiResponse = await finalAdapter.sendMessage(
+            text: text,
+            history: state.messages,
+          );
+          // Remove typing placeholder then append final message to avoid re-streaming
+          // previous assistant messages (mutation caused prior duplicate animations).
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != placeholderId) m,
+          ];
+          updatedMessages.add(aiResponse);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+          _logLatency(startTime, mode: 'normal');
+        }
       } else {
         // Fallback response if no AI adapter is available
         final aiResponse = micro.ChatMessage.assistant(
@@ -290,11 +359,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
           content:
               'Sorry, no AI provider is currently available. Please configure an AI provider in settings.',
         );
-
-        state = state.copyWith(
-          messages: [...state.messages, aiResponse],
-          isLoading: false,
-        );
+        final updatedMessages = [
+          for (final m in state.messages)
+            if (m.id != placeholderId) m,
+        ];
+        updatedMessages.add(aiResponse);
+        state = state.copyWith(messages: updatedMessages, isLoading: false);
+        _logLatency(startTime, mode: 'no-adapter');
       }
     } catch (e) {
       print('DEBUG: Error in sendMessage: $e');
@@ -321,23 +392,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
       print('DEBUG: Creating error message: $errorMessage');
 
-      final errorResponse = micro.ChatMessage.assistant(
+      final errorResponse = micro.ChatMessage.error(
         id: DateTime.now().toIso8601String(),
         content: errorMessage,
       );
 
-      print('DEBUG: Error response created: ${errorResponse.content}');
-      print(
-          'DEBUG: Current messages count before error: ${state.messages.length}');
-
+      final updatedMessages = [
+        for (final m in state.messages)
+          if (m.id != placeholderId) m,
+      ];
+      updatedMessages.add(errorResponse);
       state = state.copyWith(
-        messages: [...state.messages, errorResponse],
-        isLoading: false,
-        error: e.toString(),
-      );
-
-      print('DEBUG: Messages count after error: ${state.messages.length}');
-      print('DEBUG: Error message added to state');
+          messages: updatedMessages, isLoading: false, error: e.toString());
+      _logLatency(startTime, mode: 'error');
     }
   }
 
@@ -453,33 +520,131 @@ class ChatNotifier extends StateNotifier<ChatState> {
     return 'google';
   }
 
+  /// Execute swarm mode with multiple specialists
+  Future<void> _executeSwarmMode(String userMessage) async {
+    try {
+      print('DEBUG: Swarm mode - Executing with goal: $userMessage');
+
+      // Initialize agent service if needed
+      if (_agentService == null) {
+        print('DEBUG: Initializing agent service for swarm');
+        _agentService = AgentService(mcpService: _mcpService);
+        await _agentService!.initialize();
+      }
+
+      // Get current LLM provider
+      final activeModels = _aiProviderConfig.getAllActiveModels();
+      ProviderAdapter? adapter;
+
+      // Try ZhipuAI first, then others
+      final zhipuaiModel = activeModels['zhipu-ai'];
+      if (zhipuaiModel != null) {
+        adapter = _aiProviderConfig.getProvider('zhipu-ai');
+      } else {
+        for (final entry in activeModels.entries) {
+          adapter = _aiProviderConfig.getProvider(entry.key);
+          if (adapter != null) break;
+        }
+      }
+
+      if (adapter == null) {
+        throw Exception('No AI provider available for swarm execution');
+      }
+
+      // Execute swarm using AgentService's internal default model.
+      // NOTE: Previously we attempted to wrap ProviderAdapter with a custom
+      // _SwarmLanguageModelAdapter and pass it as `languageModel` to
+      // executeSwarmGoal. That parameter expects a BaseChatModel from LangChain,
+      // not an arbitrary LanguageModel implementation. Passing the wrapper
+      // produced a runtime type error:
+      //   type '_SwarmLanguageModelAdapter' is not a subtype of type
+      //   'BaseChatModel<ChatModelOptions>?'
+      // To keep swarm mode stable, we now omit the languageModel argument so
+      // AgentService falls back to its internally created default model. A
+      // future enhancement could add an official BaseChatModel exposure from
+      // ProviderAdapter to allow provider-selected models in swarm mode.
+      final result = await _agentService!.executeSwarmGoal(
+        goal: userMessage,
+      );
+
+      // Format swarm response
+      final responseText = _formatSwarmResponse(result);
+
+      final langchainBotMessage = ChatMessage.ai(responseText);
+      final botMessage = convertLangchainChatMessage(langchainBotMessage);
+
+      state = state.copyWith(
+        messages: [...state.messages, botMessage],
+        isLoading: false,
+      );
+
+      print(
+          'DEBUG: Swarm execution completed - ${result.totalSpecialistsUsed} specialists');
+    } catch (e, stackTrace) {
+      print('DEBUG: Swarm execution error: $e');
+      print('DEBUG: Stack trace: $stackTrace');
+
+      state = state.copyWith(
+        error: 'Swarm execution failed: $e',
+        isLoading: false,
+      );
+    }
+  }
+
+  /// Format swarm result for display
+  String _formatSwarmResponse(dynamic swarmResult) {
+    final buffer = StringBuffer();
+
+    buffer.writeln('🤖 **Swarm Intelligence Analysis**\n');
+    buffer.writeln('Specialists used: ${swarmResult.totalSpecialistsUsed}');
+    buffer.writeln('Duration: ${swarmResult.totalDuration.inSeconds}s');
+    buffer.writeln(
+        'Estimated cost: \$${swarmResult.estimatedCost.toStringAsFixed(4)}\n');
+
+    buffer.writeln('### Findings:\n');
+
+    // Get all facts from blackboard
+    final facts = swarmResult.blackboard.getAllFacts();
+    for (final entry in facts.entries) {
+      buffer.writeln('**${entry.key}**: ${entry.value}');
+    }
+
+    if (swarmResult.converged) {
+      buffer.writeln('\n✅ Goal achieved with high confidence');
+    } else {
+      buffer.writeln(
+          '\n⚠️ Partial completion - some objectives may require further analysis');
+    }
+
+    return buffer.toString();
+  }
+
   /// Execute agent mode with MCP tools
   Future<void> _executeAgentMode(String userMessage) async {
     try {
       // Get enabled MCP server IDs (only connected servers)
       final mcpServerIds = _getEnabledMCPServerIds();
-      
+
       print('DEBUG: Agent mode - Using MCP servers: $mcpServerIds');
-      
+
       // Create agent with MCP tools
       final agentId = await _agentService!.createAgent(
         name: 'Micro',
         mcpServerIds: mcpServerIds.isNotEmpty ? mcpServerIds : null,
       );
-      
+
       // Execute agent with user's query
       final result = await _agentService!.executeGoal(
         goal: userMessage,
         agentId: agentId,
       );
-      
+
       // Add agent response with tool execution steps
       _addAgentResponseWithSteps(result);
-      
     } catch (e, stackTrace) {
       print('DEBUG: Agent execution error: $e');
       print('DEBUG: Stack trace: $stackTrace');
-      
+
       state = state.copyWith(
         error: 'Agent execution failed: $e',
         isLoading: false,
@@ -490,17 +655,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Get list of enabled (connected) MCP server IDs
   List<String> _getEnabledMCPServerIds() {
     if (_mcpService == null) return [];
-    
+
     final configs = _mcpService!.getServerConfigs();
     final enabledServers = <String>[];
-    
+
     for (final config in configs) {
       final state = _mcpService!.getServerState(config.id);
       if (state != null && state.status == MCPConnectionStatus.connected) {
         enabledServers.add(config.id);
       }
     }
-    
+
     return enabledServers;
   }
 
@@ -508,14 +673,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _addAgentResponseWithSteps(agent_types.AgentResult result) {
     // Format agent response with tool steps
     final stepsText = StringBuffer();
-    
+
     if (result.steps.isNotEmpty) {
       stepsText.writeln('\n---\n**Execution Steps:**\n');
-      
+
       for (var i = 0; i < result.steps.length; i++) {
         final step = result.steps[i];
         stepsText.writeln('${i + 1}. ${step.type.name}: ${step.description}');
-        
+
         if (step.input != null) {
           stepsText.writeln('   Input: ${step.input}');
         }
@@ -527,18 +692,27 @@ class ChatNotifier extends StateNotifier<ChatState> {
         }
       }
     }
-    
+
     final fullResponse = result.result + stepsText.toString();
-    
+
     // Convert to chat message format
-    final langchainAssistantMessage =
-        ChatMessage.ai(fullResponse);
-    final assistantMessage = convertLangchainChatMessage(langchainAssistantMessage);
-    
+    final langchainAssistantMessage = ChatMessage.ai(fullResponse);
+    final assistantMessage =
+        convertLangchainChatMessage(langchainAssistantMessage);
+
     state = state.copyWith(
       messages: [...state.messages, assistantMessage],
       isLoading: false,
       error: null,
     );
   }
+}
+
+// NOTE: Removed _SwarmLanguageModelAdapter due to type mismatch with
+// AgentService.executeSwarmGoal. See _executeSwarmMode for details.
+
+/// Simple latency logging helper
+void _logLatency(DateTime start, {required String mode}) {
+  final elapsed = DateTime.now().difference(start);
+  print('LATENCY [$mode]: ${elapsed.inMilliseconds} ms total');
 }

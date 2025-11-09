@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:micro/infrastructure/ai/agent/tools/tool_registry.dart';
 import 'package:micro/infrastructure/ai/agent/tools/example_mobile_tools.dart';
+import 'package:micro/infrastructure/ai/agent/tools/mock_tools.dart';
 
 /// Represents a single execution step
 class ExecutionStep {
@@ -183,6 +184,10 @@ class AgentExecutionUINotifier extends StateNotifier<AgentExecutionUIState> {
 /// Provider for tool registry
 final toolRegistryProvider = Provider<ToolRegistry>((ref) {
   final registry = ToolRegistry();
+  // Register mock tools for swarm intelligence
+  for (final tool in getAllMockTools()) {
+    registry.register(tool);
+  }
 
   // Register all available tools
   registry.register(UIValidationTool(logger: null));

@@ -82,7 +82,8 @@ final currentSelectedModelProvider = FutureProvider<String?>((ref) async {
   // Fall back to active models
   if (activeModels.isNotEmpty) {
     // If there's no last selected model, prioritize ZhipuAI if it has an active model
-    final zhipuaiModel = activeModels['zhipuai'];
+    // Use canonical ID 'zhipu-ai' instead of aliases
+    final zhipuaiModel = activeModels['zhipu-ai'];
     if (zhipuaiModel != null) {
       print('DEBUG: Using ZhipuAI model: $zhipuaiModel');
       return zhipuaiModel;
@@ -100,15 +101,8 @@ final currentSelectedModelProvider = FutureProvider<String?>((ref) async {
     return activeModels.values.first;
   }
 
-  // Fall back to first favorite model
-  for (final providerId in [
-    'openai',
-    'google',
-    'claude',
-    'anthropic',
-    'zhipuai',
-    'z_ai'
-  ]) {
+  // Fall back to first favorite model - use canonical IDs
+  for (final providerId in ['openai', 'google', 'anthropic', 'zhipu-ai']) {
     final providerFavorites = service.getFavoriteModels(providerId);
     if (providerFavorites.isNotEmpty) {
       print(

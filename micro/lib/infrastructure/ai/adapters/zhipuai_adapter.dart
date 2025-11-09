@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:langchain/langchain.dart';
 import '../interfaces/provider_adapter.dart';
 import '../interfaces/provider_config.dart';
@@ -10,6 +12,13 @@ import '../../../core/utils/logger.dart';
 /// Uses LangChain's SimpleChatModel-based ChatZhipuAI implementation
 class ZhipuAIAdapter implements ProviderAdapter {
   final AppLogger _logger = AppLogger();
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 120),
+      sendTimeout: const Duration(seconds: 20),
+    ),
+  );
   ChatZhipuAI? _chatModel;
   ZhipuAIProvider? _zhipuaiProvider;
   String _currentModel = 'glm-4.6';
@@ -24,6 +33,9 @@ class ZhipuAIAdapter implements ProviderAdapter {
 
   @override
   bool get isInitialized => _isInitialized;
+
+  @override
+  bool get supportsStreaming => true;
 
   @override
   Future<void> initialize(ProviderConfig config) async {
@@ -197,12 +209,114 @@ class ZhipuAIAdapter implements ProviderAdapter {
   }
 
   @override
+  Stream<String> sendMessageStream({
+    required String text,
+    required List<micro.ChatMessage> history,
+  }) async* {
+    if (!_isInitialized || _chatModel == null) {
+      throw Exception('ZhipuAI adapter not initialized');
+    }
+
+    _logger
+        .info('ZhipuAI adapter streaming message with model: $_currentModel');
+
+    try {
+      // Convert micro messages to OpenAI-compatible format (like Roo Code)
+      final messages = _convertHistoryToOpenAIFormat(history);
+
+      // Use simplified streaming approach similar to Roo Code
+      final requestData = {
+        'model': _currentModel,
+        'messages': messages,
+        'stream': true,
+        'stream_options': {'include_usage': true},
+        'temperature': 0.7,
+      };
+
+      final response = await _dio.post<ResponseBody>(
+        'https://api.z.ai/api/paas/v4/chat/completions',
+        data: requestData,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $_apiKey',
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+          },
+          responseType: ResponseType.stream,
+        ),
+      );
+
+      final stream = response.data?.stream;
+      if (stream == null) {
+        throw Exception('No stream in response');
+      }
+
+      // Parse SSE like standard OpenAI streaming (fixed parsing)
+      await for (final event in stream
+          .map((bytes) => utf8.decode(bytes))
+          .transform(const LineSplitter())) {
+        _logger.info('ZhipuAI streaming: raw event: "$event"');
+        if (event.startsWith('data: ')) {
+          final data = event.substring(6).trim();
+          _logger.info('ZhipuAI streaming: extracted data: "$data"');
+          if (data.isEmpty || data == '[DONE]') {
+            continue;
+          }
+          try {
+            final decoded = jsonDecode(data) as Map<String, dynamic>;
+            _logger.info('ZhipuAI streaming: decoded JSON: $decoded');
+            final choices = decoded['choices'] as List?;
+            if (choices != null && choices.isNotEmpty) {
+              final delta = choices[0]['delta'];
+              if (delta != null && delta['content'] != null) {
+                final content = delta['content'] as String;
+                if (content.isNotEmpty) {
+                  _logger
+                      .info('ZhipuAI streaming: yielding content: "$content"');
+                  yield content;
+                }
+              }
+            }
+          } catch (e) {
+            _logger.warning('SSE JSON decode failed: $e. Data: "$data"');
+          }
+        }
+      }
+    } catch (e) {
+      _logger.error('Error streaming message from ZhipuAI', error: e);
+      throw Exception('Streaming error: ${e.toString()}');
+    }
+  }
+
+  @override
   void dispose() {
     _chatModel?.close();
     _chatModel = null;
     _zhipuaiProvider = null;
     _apiKey = null;
     _isInitialized = false;
+  }
+
+  /// Convert micro ChatMessages to OpenAI-compatible format (like Roo Code)
+  List<Map<String, String>> _convertHistoryToOpenAIFormat(
+    List<micro.ChatMessage> history,
+  ) {
+    final messages = <Map<String, String>>[];
+    for (final msg in history) {
+      String role;
+      if (msg.isFromUser) {
+        role = 'user';
+      } else if (msg.isFromAssistant) {
+        role = 'assistant';
+      } else {
+        role = 'system';
+      }
+      messages.add({
+        'role': role,
+        'content': msg.content,
+      });
+    }
+    return messages;
   }
 
   /// Convert micro ChatMessages to LangChain ChatMessages

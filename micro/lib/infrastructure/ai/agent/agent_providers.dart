@@ -348,7 +348,6 @@ class AgentManagementNotifier extends AsyncNotifier<Map<String, dynamic>> {
     return await service.executeCollaborativeTask(
       goal: goal,
       agentIds: agentIds,
-      sharedContext: sharedContext,
     );
   }
 

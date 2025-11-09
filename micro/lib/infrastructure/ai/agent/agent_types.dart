@@ -27,6 +27,8 @@ class AgentResult {
   final List<AgentStep> steps;
   final String? error;
   final Map<String, dynamic>? metadata;
+  final String? reasoning; // Added for LangChain compatibility
+  final List<String>? toolsUsed; // Added for LangChain compatibility
 
   AgentResult({
     required this.result,
@@ -34,6 +36,8 @@ class AgentResult {
     required this.steps,
     this.error,
     this.metadata,
+    this.reasoning,
+    this.toolsUsed,
   });
 }
 
@@ -43,7 +47,7 @@ class AgentStep {
   final String description;
   final AgentStepType type;
   final Map<String, dynamic>? input;
-  final Map<String, dynamic>? output;
+  final dynamic output; // Can be String or Map for LangChain compatibility
   final DateTime timestamp;
   final Duration duration;
   final String? error;
@@ -65,6 +69,7 @@ enum AgentStepType {
   planning,
   reasoning,
   toolExecution,
+  toolUse, // Added for LangChain compatibility
   reflection,
   errorRecovery,
   finalization,
@@ -79,6 +84,7 @@ enum AgentStatus {
   waiting,
   completed,
   failed,
+  error, // Added for LangChain compatibility
   cancelled,
 }
 
@@ -89,6 +95,7 @@ class AgentCapability {
   final List<String> inputTypes;
   final List<String> outputTypes;
   final Map<String, dynamic> parameters;
+  final bool enabled; // Added for LangChain compatibility
 
   AgentCapability({
     required this.name,
@@ -96,6 +103,7 @@ class AgentCapability {
     this.inputTypes = const [],
     this.outputTypes = const [],
     this.parameters = const {},
+    this.enabled = true,
   });
 }
 

@@ -16,8 +16,8 @@ class AgentServiceNotifier extends AsyncNotifier<AgentService> {
 /// Provider for AgentService
 final agentServiceProvider =
     AsyncNotifierProvider<AgentServiceNotifier, AgentService>(
-  AgentServiceNotifier.new,
-);
+      AgentServiceNotifier.new,
+    );
 
 /// Notifier for agent status
 class AgentStatusNotifier extends StreamNotifier<agent_types.AgentStatus> {
@@ -36,12 +36,13 @@ class AgentStatusNotifier extends StreamNotifier<agent_types.AgentStatus> {
 /// Provider for default agent status
 final defaultAgentStatusProvider =
     StreamNotifierProvider<AgentStatusNotifier, agent_types.AgentStatus>(
-  AgentStatusNotifier.new,
-);
+      AgentStatusNotifier.new,
+    );
 
 /// Provider for agent execution history
-final agentHistoryProvider =
-    FutureProvider<List<agent_types.AgentExecution>>((ref) async {
+final agentHistoryProvider = FutureProvider<List<agent_types.AgentExecution>>((
+  ref,
+) async {
   final serviceAsync = ref.watch(agentServiceProvider);
   final service = serviceAsync.value;
   if (service == null) return [];
@@ -57,8 +58,9 @@ final availableToolsProvider = FutureProvider<List<dynamic>>((ref) async {
 });
 
 /// Provider for tools by category
-final toolsByCategoryProvider =
-    FutureProvider<Map<String, List<dynamic>>>((ref) async {
+final toolsByCategoryProvider = FutureProvider<Map<String, List<dynamic>>>((
+  ref,
+) async {
   final serviceAsync = ref.watch(agentServiceProvider);
   final service = serviceAsync.value;
   if (service == null) return {};
@@ -68,11 +70,11 @@ final toolsByCategoryProvider =
 /// Provider for agent capabilities
 final agentCapabilitiesProvider =
     FutureProvider<List<agent_types.AgentCapability>>((ref) async {
-  final serviceAsync = ref.watch(agentServiceProvider);
-  final service = serviceAsync.value;
-  if (service == null) return [];
-  return service.getAgentCapabilities();
-});
+      final serviceAsync = ref.watch(agentServiceProvider);
+      final service = serviceAsync.value;
+      if (service == null) return [];
+      return service.getAgentCapabilities();
+    });
 
 /// State notifier for agent execution
 class AgentExecutionNotifier extends AsyncNotifier<agent_types.AgentResult?> {
@@ -93,7 +95,9 @@ class AgentExecutionNotifier extends AsyncNotifier<agent_types.AgentResult?> {
       final service = serviceAsync.value;
       if (service == null) {
         state = AsyncValue.error(
-            'Agent service not initialized', StackTrace.current);
+          'Agent service not initialized',
+          StackTrace.current,
+        );
         return;
       }
 
@@ -133,8 +137,8 @@ class AgentExecutionNotifier extends AsyncNotifier<agent_types.AgentResult?> {
 /// Provider for agent execution
 final agentExecutionProvider =
     AsyncNotifierProvider<AgentExecutionNotifier, agent_types.AgentResult?>(
-  AgentExecutionNotifier.new,
-);
+      AgentExecutionNotifier.new,
+    );
 
 /// Async notifier for agent management
 class AgentManagementNotifier extends AsyncNotifier<Map<String, dynamic>> {
@@ -274,10 +278,7 @@ class AgentManagementNotifier extends AsyncNotifier<Map<String, dynamic>> {
   /// Set active agent
   void setActiveAgent(String agentId) {
     if (state case AsyncData(:final value)) {
-      state = AsyncValue.data({
-        ...value,
-        'activeAgent': agentId,
-      });
+      state = AsyncValue.data({...value, 'activeAgent': agentId});
     }
   }
 
@@ -297,7 +298,7 @@ class AgentManagementNotifier extends AsyncNotifier<Map<String, dynamic>> {
       'average_steps': history.isEmpty
           ? 0
           : history.map((e) => e.result.steps.length).reduce((a, b) => a + b) /
-              history.length,
+                history.length,
     };
   }
 
@@ -348,7 +349,6 @@ class AgentManagementNotifier extends AsyncNotifier<Map<String, dynamic>> {
     return await service.executeCollaborativeTask(
       goal: goal,
       agentIds: agentIds,
-      sharedContext: sharedContext,
     );
   }
 
@@ -373,20 +373,22 @@ class AgentManagementNotifier extends AsyncNotifier<Map<String, dynamic>> {
 /// Provider for agent management
 final agentManagementProvider =
     AsyncNotifierProvider<AgentManagementNotifier, Map<String, dynamic>>(
-  AgentManagementNotifier.new,
-);
+      AgentManagementNotifier.new,
+    );
 
 /// Provider for real-time agent steps
 final agentStepsProvider =
-    StreamProvider.family<List<agent_types.AgentStep>, String>(
-        (ref, agentId) async* {
-  final service = ref.watch(agentServiceProvider).value;
-  if (service == null) return;
+    StreamProvider.family<List<agent_types.AgentStep>, String>((
+      ref,
+      agentId,
+    ) async* {
+      final service = ref.watch(agentServiceProvider).value;
+      if (service == null) return;
 
-  // Accumulate steps in a list and yield when available
-  final steps = <agent_types.AgentStep>[];
-  await for (final step in service.getStepStream(agentId: agentId)) {
-    steps.add(step);
-    yield steps;
-  }
-});
+      // Accumulate steps in a list and yield when available
+      final steps = <agent_types.AgentStep>[];
+      await for (final step in service.getStepStream(agentId: agentId)) {
+        steps.add(step);
+        yield steps;
+      }
+    });

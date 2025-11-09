@@ -13,6 +13,7 @@ import '../providers/app_providers.dart';
 import '../pages/agent_dashboard_page.dart';
 import '../../features/mcp/presentation/pages/mcp_server_settings_page.dart';
 import '../pages/tools_page.dart';
+import '../../features/settings/presentation/pages/swarm_settings_page.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -77,6 +78,12 @@ class AppRouter {
                 path: 'mcp',
                 name: 'mcp',
                 builder: (context, state) => const MCPServerSettingsPage(),
+              ),
+              // Swarm Intelligence Settings
+              GoRoute(
+                path: 'swarm',
+                name: 'swarm',
+                builder: (context, state) => const SwarmSettingsPage(),
               ),
             ],
           ),
