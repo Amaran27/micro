@@ -908,6 +908,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.8.0+1"
+  langchain_anthropic:
+    dependency: "direct main"
+    description:
+      name: langchain_anthropic
+      sha256: "47339d2f6068d53362bf0995949d873066cf38a46cf5c10869e4d89a82e95be6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0+1"
   langchain_core:
     dependency: "direct main"
     description:
