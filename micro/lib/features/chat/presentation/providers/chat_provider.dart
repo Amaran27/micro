@@ -455,6 +455,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Execute swarm mode with multiple specialists
   Future<void> _executeSwarmMode(String userMessage) async {
+    final swarmStartTime = DateTime.now();
     try {
       print('DEBUG: Swarm mode - Executing with goal: $userMessage');
 
@@ -465,19 +466,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
         await _agentService!.initialize();
       }
 
-      // Get current LLM provider
+      // Get current LLM provider - respect user's selection
       final activeModels = _aiProviderConfig.getAllActiveModels();
       ProviderAdapter? adapter;
 
-      // Try ZhipuAI first, then others
-      final zhipuaiModel = activeModels['zhipu-ai'];
-      if (zhipuaiModel != null) {
-        adapter = await _aiProviderConfig.getProvider('zhipu-ai');
-      } else {
-        for (final entry in activeModels.entries) {
-          adapter = await _aiProviderConfig.getProvider(entry.key);
-          if (adapter != null) break;
-        }
+      // Use the first available provider (this respects the order of user preference)
+      if (activeModels.isNotEmpty) {
+        final firstProvider = activeModels.keys.first;
+        adapter = await _aiProviderConfig.getProvider(firstProvider);
+        print('DEBUG: Swarm using provider: $firstProvider with model: ${activeModels[firstProvider]}');
       }
 
       if (adapter == null) {
@@ -558,13 +555,60 @@ class ChatNotifier extends StateNotifier<ChatState> {
       print(
           'DEBUG: Swarm execution completed - ${result.totalSpecialistsUsed} specialists');
     } catch (e, stackTrace) {
-      print('DEBUG: Swarm execution error: $e');
+      final swarmDuration = DateTime.now().difference(swarmStartTime);
+      print('DEBUG: Swarm execution error after ${swarmDuration.inMilliseconds}ms: $e');
       print('DEBUG: Stack trace: $stackTrace');
 
-      state = state.copyWith(
-        error: 'Swarm execution failed: $e',
-        isLoading: false,
-      );
+      // Try fallback to direct chat when swarm fails
+      try {
+        print('DEBUG: Attempting fallback to direct chat due to swarm failure');
+        
+        // Get the first available adapter for fallback
+        final activeModels = _aiProviderConfig.getAllActiveModels();
+        ProviderAdapter? fallbackAdapter;
+        
+        for (final entry in activeModels.entries) {
+          fallbackAdapter = await _aiProviderConfig.getProvider(entry.key);
+          if (fallbackAdapter != null) break;
+        }
+        
+        if (fallbackAdapter != null) {
+          final fallbackResponse = await fallbackAdapter.sendMessage(
+            text: userMessage,
+            history: state.messages,
+          );
+
+          // Remove typing placeholder if present
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != _pendingTypingId) m,
+          ];
+          updatedMessages.add(fallbackResponse);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+          _pendingTypingId = null;
+          
+          print('DEBUG: Successfully fell back to direct chat with ${fallbackAdapter.providerId}');
+        } else {
+          throw Exception('No providers available for fallback');
+        }
+      } catch (fallbackError) {
+        print('DEBUG: Fallback also failed: $fallbackError');
+        
+        // Remove typing placeholder and show user-friendly error
+        final updatedMessages = [
+          for (final m in state.messages)
+            if (m.id != _pendingTypingId) m,
+        ];
+        
+        final errorMessage = micro.ChatMessage.assistant(
+          id: DateTime.now().toIso8601String(),
+          content: 'I encountered an issue with my advanced processing mode. Let me try a simpler approach. Could you please rephrase your request?'
+        );
+        
+        updatedMessages.add(errorMessage);
+        state = state.copyWith(messages: updatedMessages, isLoading: false);
+        _pendingTypingId = null;
+      }
     }
   }
 
@@ -573,7 +617,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     BaseChatModel model,
     String goal,
   ) async {
-    final system = ChatMessage.system('''
+    try {
+      final system = ChatMessage.system('''
 You are a routing controller. Decide if the user's request requires multi-agent swarm planning (multiple specialists, tool usage, decomposition) or a single direct conversational response.
 Return ONLY compact JSON with these fields and nothing else:
 {
@@ -584,29 +629,62 @@ Return ONLY compact JSON with these fields and nothing else:
 If the request is simple chit-chat or can be answered directly without planning/tools, set use_swarm to false. Do not include markdown fences or explanations.
 ''');
 
-    final human = ChatMessage.human(ChatMessageContent.text('''
+      final human = ChatMessage.human(ChatMessageContent.text('''
 USER_GOAL:
 $goal
 '''));
 
-    final response = await model.invoke(PromptValue.chat([system, human]));
-    final text = response.output.content.toString();
+      final response = await model.invoke(PromptValue.chat([system, human]));
+      
+      // Handle null content safely - this was causing the type cast error
+      String text;
+      try {
+        text = response.output.content?.toString() ?? '';
+      } catch (e) {
+        print('DEBUG: Error extracting content from response: $e');
+        text = response.output?.toString() ?? '';
+      }
+      
+      if (text.isEmpty) {
+        print('DEBUG: Empty response from routing model, defaulting to direct chat');
+        return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
+      }
 
-    String jsonText = text.trim();
-    final match = RegExp(r"\{[\s\S]*\}").firstMatch(jsonText);
-    if (match != null) {
-      jsonText = match.group(0)!;
-    }
+      if (kDebugMode) {
+        print('DEBUG: Swarm routing response: $text');
+      }
 
-    try {
-      final parsed = json.decode(jsonText) as Map<String, dynamic>;
-      final use = parsed['use_swarm'] == true;
-      final max = parsed['max_specialists'];
-      final maxInt = max is num ? max.toInt() : null;
-      return SwarmRouteDecision(useSwarm: use, maxSpecialists: maxInt);
-    } catch (_) {
-      // If parsing fails, default to using swarm to preserve functionality
-      return SwarmRouteDecision(useSwarm: true, maxSpecialists: null);
+      String jsonText = text.trim();
+      final match = RegExp(r"\{[\s\S]*\}").firstMatch(jsonText);
+      if (match != null) {
+        jsonText = match.group(0)!;
+      }
+
+      try {
+        final parsed = json.decode(jsonText) as Map<String, dynamic>;
+        final use = parsed['use_swarm'] == true;
+        final max = parsed['max_specialists'];
+        final maxInt = max is num ? max.toInt() : null;
+        
+        if (kDebugMode) {
+          print('DEBUG: Swarm routing decision: useSwarm=$use, maxSpecialists=$maxInt');
+        }
+        
+        return SwarmRouteDecision(useSwarm: use, maxSpecialists: maxInt);
+      } catch (e) {
+        if (kDebugMode) {
+          print('DEBUG: Failed to parse swarm routing JSON: $e');
+          print('DEBUG: Original response: $text');
+        }
+        // If parsing fails, default to NOT using swarm for reliability
+        return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('DEBUG: Swarm routing failed completely: $e');
+      }
+      // If everything fails, default to direct chat
+      return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
     }
   }
 

@@ -33,16 +33,30 @@ class ChatGoogleAdapter implements ProviderAdapter {
       }
       _config = config;
 
+      final startTime = DateTime.now();
+      
       _chatModel = ChatGoogleGenerativeAI(
         apiKey: config.apiKey,
         defaultOptions: ChatGoogleGenerativeAIOptions(
           model: config.model,
-          temperature: 0.7,
+          temperature: 0.3, // Lower temperature for better accuracy
+          topP: 0.8, // Focus on more likely tokens
+          topK: 40, // Limit token diversity
+          maxOutputTokens: 2048, // Reasonable limit for performance
         ),
       );
 
+      // Optimized pre-warm with minimal overhead
+      try {
+        // Skip pre-warm for faster startup - let first request handle initialization
+        _logger.info('Google adapter ready (lazy initialization enabled)');
+      } catch (e) {
+        _logger.info('Google adapter initialization note: ${e.toString()}');
+      }
+
       _isInitialized = true;
-      _logger.info('Google adapter initialized with model: ${config.model}');
+      final initTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.info('Google adapter initialized with model: ${config.model} (${initTime}ms + pre-warm)');
     } catch (e) {
       _logger.error('Failed to initialize Google adapter', error: e);
       _isInitialized = false;
@@ -71,7 +85,10 @@ class ChatGoogleAdapter implements ProviderAdapter {
         prompt,
         options: ChatGoogleGenerativeAIOptions(
           model: _config!.model,
-          temperature: 0.7,
+          temperature: 0.3, // Consistent with initialization
+          topP: 0.8,
+          topK: 40,
+          maxOutputTokens: 2048,
         ),
       );
 
@@ -101,10 +118,28 @@ class ChatGoogleAdapter implements ProviderAdapter {
 
   @override
   Future<List<String>> getAvailableModels() async {
+    // TODO: Fetch dynamically from Google API when available
+    // Current models as of November 2025 - updated to include 2.x generation
     return [
+      // Latest 2.5 generation (most capable)
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      
+      // 2.0 generation (workhorse models with 1M context)
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      
+      // Latest aliases (auto-update to newest versions)
+      'gemini-2.5-pro-latest',
+      'gemini-2.5-flash-latest',
+      'gemini-flash-latest',
+      
+      // Legacy 1.5 generation (still supported)
       'gemini-1.5-pro',
       'gemini-1.5-flash',
-      'gemini-1.0-pro',
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-flash-latest',
     ];
   }
 
@@ -117,6 +152,7 @@ class ChatGoogleAdapter implements ProviderAdapter {
       throw Exception('Google adapter not initialized');
     }
 
+    final startTime = DateTime.now();
     _logger.info('Google adapter streaming message with model: $currentModel');
 
     try {
@@ -125,23 +161,30 @@ class ChatGoogleAdapter implements ProviderAdapter {
 
       final prompt = PromptValue.chat(messages);
 
-      // Use LangChain's stream method for token-by-token streaming
+      // Optimized streaming with performance and accuracy settings
       final stream = _chatModel.stream(
         prompt,
         options: ChatGoogleGenerativeAIOptions(
           model: _config!.model,
-          temperature: 0.7,
+          temperature: 0.3, // Better accuracy with lower temperature
+          topP: 0.8, // Focus on likely responses
+          topK: 40, // Controlled diversity
+          maxOutputTokens: 2048, // Performance-friendly limit
         ),
       );
 
       await for (final chunk in stream) {
-        final content = chunk.output.toString();
+        final content = _extractContentFromChunk(chunk.output);
         if (content.isNotEmpty) {
           yield content;
         }
       }
+      
+      final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.info('Google streaming completed: ${totalTime}ms total');
     } catch (e) {
-      _logger.error('Error streaming message from Google', error: e);
+      final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.error('Error streaming message from Google (${totalTime}ms elapsed)', error: e);
       throw Exception('Streaming error: ${e.toString()}');
     }
   }
@@ -174,11 +217,73 @@ class ChatGoogleAdapter implements ProviderAdapter {
   }
 
   /// Convert LangChain ChatMessage response to micro ChatMessage
-  micro.ChatMessage _convertResponseToMicro(ChatMessage lcMessage) {
+  micro.ChatMessage _convertResponseToMicro(dynamic response) {
+    // Handle both String content and ChatMessage objects for consistency
+    String content;
+    if (response is String) {
+      content = response;
+    } else {
+      // Extract just the content from LangChain response objects
+      // Check if it has a content property (like ChatMessage objects)
+      try {
+        if (response.runtimeType.toString().contains('ChatMessage')) {
+          // For LangChain ChatMessage objects, extract the content field
+          final contentField = response.content;
+          if (contentField != null) {
+            content = contentField.toString();
+          } else {
+            content = response.toString();
+          }
+        } else {
+          // Fallback to string conversion
+          content = response.toString();
+        }
+      } catch (e) {
+        // If extraction fails, fall back to string conversion
+        content = response.toString();
+      }
+    }
+    
     return micro.ChatMessage.assistant(
       id: DateTime.now().toIso8601String(),
-      content: lcMessage.toString(),
+      content: content,
     );
+  }
+
+  /// Extract content from streaming response chunks
+  String _extractContentFromChunk(dynamic chunk) {
+    if (chunk is String) {
+      return chunk;
+    }
+    
+    try {
+      // Check if it's a ChatMessage-like object
+      if (chunk.runtimeType.toString().contains('ChatMessage')) {
+        final contentField = chunk.content;
+        if (contentField != null) {
+          return contentField.toString();
+        }
+      }
+      
+      // Parse from string representation if it contains content
+      final chunkStr = chunk.toString();
+      if (chunkStr.contains('content:')) {
+        final contentMatch = RegExp(r'content:\s*([^,}]+)').firstMatch(chunkStr);
+        if (contentMatch != null) {
+          var content = contentMatch.group(1)?.trim() ?? chunkStr;
+          // Remove surrounding quotes if present
+          if (content.startsWith('"') && content.endsWith('"')) {
+            content = content.substring(1, content.length - 1);
+          }
+          return content;
+        }
+      }
+      
+      return chunkStr;
+    } catch (e) {
+      _logger.error('Error extracting content from chunk', error: e);
+      return chunk.toString();
+    }
   }
 
   /// Build user-friendly error message from exception

@@ -23,6 +23,9 @@ class ChatMistralAdapter implements ProviderAdapter {
   bool get isInitialized => _isInitialized;
 
   @override
+  bool get supportsStreaming => true;
+
+  @override
   Future<void> initialize(ProviderConfig config) async {
     try {
       if (config is! OpenAIConfig) {
@@ -70,6 +73,42 @@ class ChatMistralAdapter implements ProviderAdapter {
     } catch (e) {
       _logger.error('Error sending message to Mistral', error: e);
       return _buildErrorMessage(e, 'Mistral');
+    }
+  }
+
+  @override
+  Stream<String> sendMessageStream({
+    required String text,
+    required List<micro.ChatMessage> history,
+  }) async* {
+    if (!_isInitialized) {
+      throw Exception('Mistral adapter not initialized');
+    }
+
+    final startTime = DateTime.now();
+    _logger.info('Mistral adapter streaming message with model: $currentModel');
+
+    try {
+      final messages = _convertHistoryToLangchain(history);
+      messages.add(ChatMessage.humanText(text));
+
+      final prompt = PromptValue.chat(messages);
+
+      final stream = _chatModel.stream(prompt);
+
+      await for (final chunk in stream) {
+        final content = chunk.output.toString();
+        if (content.isNotEmpty) {
+          yield content;
+        }
+      }
+      
+      final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.info('Mistral streaming completed: ${totalTime}ms total');
+    } catch (e) {
+      final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logger.error('Error streaming message from Mistral (${totalTime}ms elapsed)', error: e);
+      throw Exception('Streaming error: ${e.toString()}');
     }
   }
 

@@ -7,6 +7,7 @@ import 'interfaces/provider_config.dart';
 import 'adapters/chat_openai_adapter.dart';
 import 'adapters/chat_google_adapter.dart';
 import 'adapters/zhipuai_adapter.dart';
+import 'adapters/chat_mistral_adapter.dart';
 import 'provider_storage_service.dart' as new_store;
 import 'provider_config_model.dart' as model_cfg;
 
