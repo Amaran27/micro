@@ -604,6 +604,10 @@ class _StepItem extends StatelessWidget {
       agent_types.AgentStepType.planning => (Icons.calendar_today, Colors.blue),
       agent_types.AgentStepType.reasoning => (Icons.lightbulb, Colors.purple),
       agent_types.AgentStepType.toolExecution => (Icons.build, Colors.orange),
+      agent_types.AgentStepType.toolUse => (
+          Icons.construction,
+          Colors.deepOrange
+        ),
       agent_types.AgentStepType.reflection => (Icons.visibility, Colors.green),
       agent_types.AgentStepType.finalization => (Icons.flag, Colors.teal),
       agent_types.AgentStepType.errorRecovery => (Icons.healing, Colors.red),

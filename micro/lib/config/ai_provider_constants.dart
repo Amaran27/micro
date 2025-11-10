@@ -22,8 +22,9 @@ class AIProviderConstants {
     'google': 'https://generativelanguage.googleapis.com/v1beta',
     'anthropic': 'https://api.anthropic.com/v1',
     'claude': 'https://api.anthropic.com/v1', // Alternative endpoint
-    'zhipuai': 'https://api.z.ai/api/paas/v4',
-    'z_ai': 'https://api.z.ai/api/paas/v4', // Alternative endpoint
+    // Use coding endpoint by default for ZhipuAI as requested
+    'zhipuai': 'https://api.z.ai/api/coding/paas/v4',
+    'z_ai': 'https://api.z.ai/api/coding/paas/v4', // Alternative endpoint
     'azure':
         'https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT',
     'cohere': 'https://api.cohere.com/v1',

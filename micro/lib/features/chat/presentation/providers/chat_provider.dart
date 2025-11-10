@@ -1,23 +1,21 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:langchain/langchain.dart';
+import 'package:langchain_core/chat_models.dart' as langchain;
 import 'package:micro/features/chat/domain/usecases/send_message_usecase.dart';
 import 'package:micro/infrastructure/ai/ai_provider_config.dart';
 import 'package:micro/infrastructure/ai/interfaces/provider_adapter.dart';
 import 'package:micro/infrastructure/ai/interfaces/provider_config.dart' as pc;
-import 'package:micro/infrastructure/ai/adapters/zhipuai_adapter.dart';
-import 'package:micro/infrastructure/ai/adapters/chat_google_adapter.dart';
-import 'package:micro/infrastructure/ai/adapters/chat_openai_adapter.dart';
 import 'package:micro/features/chat/data/sources/llm_data_source.dart';
 import 'package:micro/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:micro/features/chat/domain/utils/chat_message_converter.dart';
+import 'package:micro/infrastructure/ai/model_selection_service.dart';
+import 'package:micro/core/utils/logger.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
-import 'package:micro/presentation/providers/provider_config_providers.dart';
-import 'package:micro/infrastructure/ai/provider_config_model.dart';
-import 'package:micro/infrastructure/ai/mcp/mcp_service.dart';
-import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
-import 'package:micro/infrastructure/ai/agent/agent_service.dart';
-import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
+
+import 'dart:convert';
 
 class ChatState {
   final List<micro.ChatMessage> messages;
@@ -64,225 +62,246 @@ final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>(
 class ChatNotifier extends StateNotifier<ChatState> {
   final AIProviderConfig _aiProviderConfig;
   final Ref _ref;
-  MCPService? _mcpService;
-  AgentService? _agentService;
+  
+  // Performance optimization: Cache adapter by exact provider+model combination
+  final Map<String, ProviderAdapter> _adapterCache = {};  // "providerId:modelId" -> adapter
+  final Map<String, DateTime> _adapterCacheTime = {};     // "providerId:modelId" -> timestamp
+  static const Duration _adapterCacheExpiry = Duration(minutes: 5);
+  
+  String? _pendingTypingId;
 
   ChatNotifier(this._aiProviderConfig, this._ref) : super(ChatState()) {
     _initializeAIProvider();
-    _initializeAgentServices();
   }
 
   Future<void> _initializeAIProvider() async {
-    await _aiProviderConfig.initialize();
+    // Only initialize once, check if already initialized
+    if (!_aiProviderConfig.isInitialized) {
+      await _aiProviderConfig.initialize();
+    }
   }
 
-  void _initializeAgentServices() {
-    // Initialize MCP and Agent services
-    _mcpService = MCPService();
-    _agentService = AgentService(mcpService: _mcpService!);
+  /// True reactive provider+model caching using AIProviderConfig
+  Future<ProviderAdapter?> _getOptimizedAdapter() async {
+    final now = DateTime.now();
+    
+    try {
+      // Fast path: Use AIProviderConfig's active models (already loaded during initialization)
+      final activeModels = _aiProviderConfig.getAllActiveModels();
+      
+      if (activeModels.isEmpty) {
+        // Only fallback to ModelSelectionService if absolutely necessary
+        final modelService = ModelSelectionService.instance;
+        if (!modelService.isInitialized) {
+          await modelService.initialize();
+        }
+        final fallbackModels = modelService.getAllActiveModels();
+        if (fallbackModels.isEmpty) {
+          if (kDebugMode) print('DEBUG: No active models found');
+          return null;
+        }
+        return await _selectOptimalProvider(fallbackModels);
+      }
+      
+      return await _selectOptimalProvider(activeModels);
+    } catch (e) {
+      AppLogger().error('Error getting optimized adapter', error: e);
+      return null;
+    }
   }
 
-  Future<void> sendMessage(String text, {bool agentMode = false}) async {
+  /// Select the provider based on user's current selection
+  Future<ProviderAdapter?> _selectOptimalProvider(Map<String, String> activeModels) async {
+    // Get the user's current selected model from UI
+    final currentSelectedModel = await _getCurrentUserSelectedModel();
+    
+    if (currentSelectedModel != null && activeModels.isNotEmpty) {
+      // Find which provider matches the user's selected model
+      for (final entry in activeModels.entries) {
+        if (entry.value == currentSelectedModel) {
+          final provider = entry.key;
+          final model = entry.value;
+          if (kDebugMode) print('DEBUG: Using user selected provider+model: $provider:$model');
+          return await _getAdapterForProvider(provider, model);
+        }
+      }
+      
+      // If exact model match not found, use the provider that has the user's selected model
+      final userProvider = _detectProviderFromModel(currentSelectedModel);
+      if (activeModels.containsKey(userProvider)) {
+        final model = activeModels[userProvider]!;
+        if (kDebugMode) print('DEBUG: using user provider: $userProvider with model: $model');
+        return await _getAdapterForProvider(userProvider, model);
+      }
+    }
+    
+    // No user selection found, return null (no fallback)
+    if (kDebugMode) print('DEBUG: No user selection found, returning null');
+    return null;
+  }
+
+  /// Get adapter for specific provider and model with caching
+  Future<ProviderAdapter?> _getAdapterForProvider(String providerId, String modelId) async {
+    final now = DateTime.now();
+    final cacheKey = '$providerId:$modelId';
+    
+    if (kDebugMode) print('DEBUG: Using provider+model: $cacheKey');
+    
+    // Check cache first
+    if (_adapterCache.containsKey(cacheKey)) {
+      final cacheTime = _adapterCacheTime[cacheKey] ?? DateTime.now();
+      if (now.difference(cacheTime) < _adapterCacheExpiry) {
+        final cachedAdapter = _adapterCache[cacheKey];
+        if (kDebugMode) print('DEBUG: Using cached adapter: $cacheKey');
+        return cachedAdapter;
+      } else {
+        // Cache expired, remove it
+        _adapterCache.remove(cacheKey);
+        _adapterCacheTime.remove(cacheKey);
+      }
+    }
+    
+    // Get adapter for the provider (async with lazy initialization)
+    var adapter = await _aiProviderConfig.getProvider(providerId);
+    if (kDebugMode) print('DEBUG: _getOptimizedAdapter() - adapter from getProvider: ${adapter?.runtimeType}');
+    
+    if (adapter != null && adapter.currentModel != modelId) {
+      if (kDebugMode) print('DEBUG: _getOptimizedAdapter() - switching model from ${adapter.currentModel} to $modelId');
+      // Update adapter to use current model
+      await adapter.switchModel(modelId);
+    }
+    
+    // Cache the adapter if valid
+    if (adapter != null && adapter.isInitialized) {
+      _adapterCache[cacheKey] = adapter;
+      _adapterCacheTime[cacheKey] = now;
+      if (kDebugMode) print('DEBUG: Cached new adapter: $cacheKey');
+      return adapter;
+    }
+    
+    if (kDebugMode) print('DEBUG: No valid adapter found for provider+model: $cacheKey');
+    return null;
+  }
+
+  /// Get the user's current selected model from UI
+  Future<String?> _getCurrentUserSelectedModel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final selectedModel = prefs.getString('last_selected_model');
+      if (kDebugMode) print('DEBUG: User current selected model: $selectedModel');
+      return selectedModel;
+    } catch (e) {
+      if (kDebugMode) print('DEBUG: Error getting user selected model: $e');
+      return null;
+    }
+  }
+
+  /// Detect provider from model name (simplified version)
+  String _detectProviderFromModel(String model) {
+    if (model.toLowerCase().contains('gemini') || model.toLowerCase().contains('google')) {
+      return 'google';
+    } else if (model.toLowerCase().contains('gpt') || model.toLowerCase().contains('openai')) {
+      return 'openai';
+    } else if (model.toLowerCase().contains('glm') || model.toLowerCase().contains('zhipu')) {
+      return 'zhipu-ai';
+    }
+    // Default to zhipu-ai for unknown models (can be removed if no fallback desired)
+    return 'zhipu-ai';
+  }
+
+  Future<void> sendMessage(String text,
+      {bool agentMode = false, bool swarmMode = false}) async {
     if (text.trim().isEmpty) return;
 
     final langchainUserMessage =
-        ChatMessage.human(ChatMessageContent.text(text));
+        langchain.ChatMessage.human(langchain.ChatMessageContent.text(text));
     final userMessage = convertLangchainChatMessage(langchainUserMessage);
+    // Record start time for latency diagnostics
+    final startTime = DateTime.now();
+
+    // Add user message immediately
     state = state.copyWith(
       messages: [...state.messages, userMessage],
       isLoading: true,
       error: null,
     );
 
+    // Insert a typing placeholder assistant message to improve perceived responsiveness.
+    // This avoids the "dead air" while waiting for full model response since we currently
+    // use non-streaming invoke(). We will later replace this placeholder with the final content.
+    // NOTE: Real token streaming should use a streaming endpoint; this is a UX enhancement only.
+    final placeholderId =
+        'assistant_typing_${DateTime.now().millisecondsSinceEpoch}';
+    final typingPlaceholder = micro.ChatMessage.typing(
+      id: placeholderId,
+      userId: 'ai',
+    );
+    _pendingTypingId = placeholderId;
+    state = state.copyWith(
+      messages: [...state.messages, typingPlaceholder],
+      // Keep isLoading true
+    );
+
     try {
-      // AGENT MODE: Use autonomous agent with MCP tools
-      if (agentMode && _agentService != null) {
-        await _executeAgentMode(text);
-        return;
-      }
+      // NORMAL MODE: Use optimized provider adapter detection
+      final adapter = await _getOptimizedAdapter();
 
-      // NORMAL MODE: Use existing provider adapters
-      // Use active models from provider config instead of deleted model_selection_notifier
-      final currentModelId = null; // No specific model selected yet
-      print('DEBUG: Using active models from provider config');
-
-      ProviderAdapter? adapter;
-
-      // Try to get the active model for each provider
-      final activeModels = _aiProviderConfig.getAllActiveModels();
-      print('DEBUG: Active models: $activeModels');
-
-      // Check if ZhipuAI has an active model
-      final zhipuaiModel = activeModels['zhipu-ai'];
-      if (zhipuaiModel != null) {
-        adapter = _aiProviderConfig.getProvider('zhipu-ai');
-        print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
-      }
-
-      // If no ZhipuAI model, try other providers
-      if (adapter == null) {
-        for (final entry in activeModels.entries) {
-          final providerId = entry.key;
-          final modelId = entry.value;
-          print('DEBUG: Trying provider: $providerId with model: $modelId');
-
-          adapter = _aiProviderConfig.getProvider(providerId);
-          if (adapter != null) {
-            print('DEBUG: Using provider: $providerId');
-            break;
-          }
-        }
-      }
-
-      if (currentModelId != null) {
-        // Get the provider for the selected model
-        String providerId = _detectProviderFromModel(currentModelId);
-
-        print(
-            'DEBUG: Current model ID: $currentModelId, detected provider: $providerId');
-
-        // First try to get adapter from new provider system
-        try {
-          final configsAsync = _ref.read(providersConfigProvider);
-          final configs = await configsAsync.when(
-            data: (data) async => data,
-            loading: () async => [],
-            error: (e, s) async {
-              print('DEBUG: Error reading new configs: $e');
-              return [];
-            },
-          );
-
-          if (configs.isNotEmpty) {
-            try {
-              // Find config for this provider that has this model
-              ProviderConfig? matchingConfig;
-
-              // First try to find a config with the exact model as favorite
-              for (final c in configs) {
-                if (c.providerId == providerId &&
-                    c.isEnabled &&
-                    c.testPassed &&
-                    c.favoriteModels.contains(currentModelId)) {
-                  matchingConfig = c;
-                  break;
-                }
-              }
-
-              // If not found, try to find any enabled config for this provider
-              if (matchingConfig == null) {
-                for (final c in configs) {
-                  if (c.providerId == providerId && c.isEnabled) {
-                    matchingConfig = c;
-                    break;
-                  }
-                }
-              }
-
-              if (matchingConfig != null) {
-                print(
-                    'DEBUG: Found new provider config: ${matchingConfig.providerId}');
-
-                // Create adapter for this provider
-                adapter = await _createAdapterFromConfig(
-                    matchingConfig, currentModelId);
-                print(
-                    'DEBUG: Created adapter from new config: ${adapter?.providerId}');
-              } else {
-                print(
-                    'DEBUG: No matching config found for provider: $providerId');
-              }
-            } catch (e) {
-              print('DEBUG: Error finding config: $e');
-            }
-          }
-        } catch (e) {
-          print('DEBUG: Error reading new provider configs: $e');
-        }
-
-        // Fallback to old system if new system didn't provide adapter
-        if (adapter == null) {
-          adapter = _aiProviderConfig.getProvider(providerId);
-          print(
-              'DEBUG: Fallback to old provider system adapter: ${adapter?.providerId}');
-        }
-
-        print(
-            'DEBUG: Final adapter: ${adapter?.providerId}, current model: ${adapter?.currentModel}');
-
-        // If we couldn't get an adapter or it doesn't have the right model, try direct provider lookup
-        if (adapter == null || adapter.currentModel != currentModelId) {
-          if (currentModelId.toLowerCase().startsWith('glm-')) {
-            adapter = _aiProviderConfig.getProvider('zhipu-ai');
-            print('DEBUG: Using direct ZhipuAI provider for GLM model');
-          } else if (currentModelId.toLowerCase().startsWith('gemini-')) {
-            adapter = _aiProviderConfig.getProvider('google');
-            print('DEBUG: Using direct Google provider for Gemini model');
-          }
-        }
-
-        // Switch to the selected model if different from current
-        final currentAdapter = adapter;
-        if (currentAdapter != null &&
-            currentAdapter.currentModel != currentModelId) {
-          await currentAdapter.switchModel(currentModelId);
-          print('DEBUG: Switched adapter to model: $currentModelId');
-        }
-      }
-
-      // Fallback to any available provider if we couldn't get a specific one
-      if (adapter == null) {
-        // If no specific model is selected, try to use the active ZhipuAI model
-        if (currentModelId == null) {
-          final activeModels = _aiProviderConfig.getAllActiveModels();
-          print('DEBUG: Active models when no currentModelId: $activeModels');
-
-          // Check if ZhipuAI has an active model
-          final zhipuaiModel = activeModels['zhipuai'];
-          if (zhipuaiModel != null) {
-            adapter = _aiProviderConfig.getProvider('zhipuai');
-            print('DEBUG: Using active ZhipuAI model: $zhipuaiModel');
-          } else {
-            // Try Google as fallback
-            final googleModel = activeModels['google'];
-            if (googleModel != null) {
-              adapter = _aiProviderConfig.getProvider('google');
-              print('DEBUG: Using active Google model: $googleModel');
-            }
-          }
-        }
-        // Otherwise try to get a provider based on the current model prefix
-        else if (currentModelId.toLowerCase().startsWith('glm-')) {
-          adapter = _aiProviderConfig.getProvider('zhipuai');
-          print(
-              'DEBUG: Fallback to ZhipuAI adapter for GLM model: $currentModelId');
-        } else if (currentModelId.toLowerCase().startsWith('gemini-')) {
-          adapter = _aiProviderConfig.getProvider('google');
-          print(
-              'DEBUG: Using Google adapter for Gemini model: $currentModelId');
-        } else {
-          // For any other model, try to detect the provider
-          final detectedProvider = _detectProviderFromModel(currentModelId);
-          adapter = _aiProviderConfig.getProvider(detectedProvider);
-          print(
-              'DEBUG: Using detected provider $detectedProvider for model: $currentModelId');
-        }
-      }
+      
 
       final finalAdapter = adapter;
       if (finalAdapter != null && finalAdapter.isInitialized) {
         print(
             'DEBUG: Using adapter: ${finalAdapter.providerId} with model: ${finalAdapter.currentModel}');
-        // Use the adapter's sendMessage method
-        final aiResponse = await finalAdapter.sendMessage(
-          text: text,
-          history: state.messages,
-        );
 
-        state = state.copyWith(
-          messages: [...state.messages, aiResponse],
-          isLoading: false,
-        );
+        // Use streaming if supported for real-time token display
+        if (finalAdapter.supportsStreaming) {
+          print('DEBUG: Using streaming for ${finalAdapter.providerId}');
+
+          // Accumulate the complete response
+          final buffer = StringBuffer();
+          await for (final token in finalAdapter.sendMessageStream(
+            text: text,
+            history:
+                state.messages.where((m) => m.id != placeholderId).toList(),
+          )) {
+            buffer.write(token);
+          }
+
+          // Create the complete assistant message
+          final assistantId =
+              'assistant_${DateTime.now().millisecondsSinceEpoch}';
+          final completeResponse = buffer.toString();
+          final assistantMessage = micro.ChatMessage.assistant(
+            id: assistantId,
+            content: completeResponse,
+          );
+
+          // Remove typing placeholder and add the complete assistant message
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != placeholderId) m,
+          ];
+          updatedMessages.add(assistantMessage);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+
+          _logLatency(startTime, mode: 'streaming');
+        } else {
+          // Fallback to non-streaming (original behavior)
+          print('DEBUG: Using non-streaming for ${finalAdapter.providerId}');
+          final aiResponse = await finalAdapter.sendMessage(
+            text: text,
+            history: state.messages,
+          );
+          // Remove typing placeholder then append final message to avoid re-streaming
+          // previous assistant messages (mutation caused prior duplicate animations).
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != placeholderId) m,
+          ];
+          updatedMessages.add(aiResponse);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+          _logLatency(startTime, mode: 'normal');
+        }
       } else {
         // Fallback response if no AI adapter is available
         final aiResponse = micro.ChatMessage.assistant(
@@ -290,11 +309,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
           content:
               'Sorry, no AI provider is currently available. Please configure an AI provider in settings.',
         );
-
-        state = state.copyWith(
-          messages: [...state.messages, aiResponse],
-          isLoading: false,
-        );
+        final updatedMessages = [
+          for (final m in state.messages)
+            if (m.id != placeholderId) m,
+        ];
+        updatedMessages.add(aiResponse);
+        state = state.copyWith(messages: updatedMessages, isLoading: false);
+        _logLatency(startTime, mode: 'no-adapter');
       }
     } catch (e) {
       print('DEBUG: Error in sendMessage: $e');
@@ -321,23 +342,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
       print('DEBUG: Creating error message: $errorMessage');
 
-      final errorResponse = micro.ChatMessage.assistant(
+      final errorResponse = micro.ChatMessage.error(
         id: DateTime.now().toIso8601String(),
         content: errorMessage,
       );
 
-      print('DEBUG: Error response created: ${errorResponse.content}');
-      print(
-          'DEBUG: Current messages count before error: ${state.messages.length}');
-
+      final updatedMessages = [
+        for (final m in state.messages)
+          if (m.id != placeholderId) m,
+      ];
+      updatedMessages.add(errorResponse);
       state = state.copyWith(
-        messages: [...state.messages, errorResponse],
-        isLoading: false,
-        error: e.toString(),
-      );
-
-      print('DEBUG: Messages count after error: ${state.messages.length}');
-      print('DEBUG: Error message added to state');
+          messages: updatedMessages, isLoading: false, error: e.toString());
+      _logLatency(startTime, mode: 'error');
     }
   }
 
@@ -346,111 +363,557 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(messages: []);
   }
 
-  /// Create adapter from new ProviderConfig
-  Future<ProviderAdapter?> _createAdapterFromConfig(
-      dynamic config, String modelId) async {
+  /// Simple latency logging helper
+  void _logLatency(DateTime start, {required String mode}) {
+    final elapsed = DateTime.now().difference(start);
+    print('LATENCY [$mode]: ${elapsed.inMilliseconds} ms total');
+  }
+}
+    final swarmStartTime = DateTime.now();
+    final agentStart = DateTime.now();
+    String result;
+    agent_types.AgentResult? agentResult;
     try {
-      final providerId = config.providerId;
-      final apiKey = config.apiKey;
+      print('DEBUG: Swarm mode - Executing with goal: $userMessage');
 
-      print('DEBUG: Creating adapter for $providerId with model $modelId');
-
-      ProviderAdapter? adapter;
-
-      switch (providerId) {
-        case 'zhipu-ai':
-          adapter = ZhipuAIAdapter();
-          final zhipuConfig = pc.ZhipuAIConfig(
-            model: modelId,
-            apiKey: apiKey,
-          );
-          await adapter.initialize(zhipuConfig);
-          break;
-        case 'google':
-          adapter = ChatGoogleAdapter();
-          final googleConfig = pc.GoogleConfig(
-            model: modelId,
-            apiKey: apiKey,
-          );
-          await adapter.initialize(googleConfig);
-          break;
-        case 'openai':
-          adapter = ChatOpenAIAdapter();
-          final openaiConfig = pc.OpenAIConfig(
-            model: modelId,
-            apiKey: apiKey,
-          );
-          await adapter.initialize(openaiConfig);
-          break;
-        default:
-          print(
-              'DEBUG: Provider $providerId not yet implemented for new system');
-          return null;
+      // Initialize agent service if needed
+      if (_agentService == null) {
+        print('DEBUG: Initializing agent service for swarm');
+        _agentService = AgentService(mcpService: _mcpService);
+        await _agentService!.initialize();
       }
 
+      // Get current LLM provider - respect user's selection
+      final activeModels = _aiProviderConfig.getAllActiveModels();
+      ProviderAdapter? adapter;
+
+      // Use the first available provider (this respects the order of user preference)
+      if (activeModels.isNotEmpty) {
+        final firstProvider = activeModels.keys.first;
+        adapter = await _aiProviderConfig.getProvider(firstProvider);
+        print('DEBUG: Swarm using provider: $firstProvider with model: ${activeModels[firstProvider]}');
+      }
+
+      if (adapter == null) {
+        throw Exception('No AI provider available for swarm execution');
+      }
+
+      // Get LangChain model from provider adapter for swarm execution
+      final langChainModel = adapter.getLangChainModel();
+      if (langChainModel == null) {
+        throw Exception(
+            'Provider ${adapter.providerId} does not support LangChain models required for Swarm');
+      }
+
+      // LLM-driven routing decision with heuristic fallback
+      final routingStart = DateTime.now();
+      SwarmRouteDecision route;
+      
+      try {
+        route = await _llmSwarmRoutingDecision(langChainModel, userMessage);
+      } catch (e) {
+        print('DEBUG: Swarm routing failed completely: $e');
+        // Fall back to heuristic routing
+        route = _heuristicSwarmRouting(userMessage);
+      }
+      
+      final routingDuration = DateTime.now().difference(routingStart);
+      // SWARM_METRIC: captures LLM routing latency & decision outcome (observability for trivial vs complex goals)
       print(
-          'DEBUG: Successfully created and initialized adapter for $providerId');
-      return adapter;
-    } catch (e) {
-      print('DEBUG: Error creating adapter from config: $e');
-      return null;
+          'SWARM_METRIC phase=routing duration_ms=${routingDuration.inMilliseconds} use_swarm=${route.useSwarm} max_specialists=${route.maxSpecialists ?? -1}');
+      final useSwarm = route.useSwarm;
+      final maxSpecialists = route.maxSpecialists;
+
+      if (!useSwarm) {
+        // Route directly to the adapter for a conversational response
+        try {
+          final aiResponse = await adapter.sendMessage(
+            text: userMessage,
+            history: state.messages,
+          );
+
+          // Remove typing placeholder if present
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != _pendingTypingId) m,
+          ];
+          updatedMessages.add(aiResponse);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+          _pendingTypingId = null;
+          print('DEBUG: Routed by LLM to direct response (no swarm)');
+          return;
+        } catch (e) {
+          print('DEBUG: Direct response failed: $e');
+          // Fall back to error handling below
+        }
+      }
+
+      // Use LangChain Agent pattern like the clean example
+      try {
+        print('DEBUG: Starting LangChain agent execution');
+        
+        // Execute using LangChain AgentService (simple and clean)
+        agentResult = await _agentService!.executeGoal(goal: userMessage).timeout(
+          Duration(minutes: 2),
+          onTimeout: () {
+            throw Exception('Agent execution timed out after 2 minutes');
+          },
+        );
+        
+        // Extract the result from AgentResult
+        result = agentResult.result;
+        
+        print('DEBUG: LangChain agent execution completed successfully');
+      } catch (e) {
+        print('DEBUG: LangChain agent execution failed: $e');
+        
+        // Create a fallback response for agent failures
+        final fallbackResponse = '''🚫 **Agent Execution Failed**
+
+I attempted to use multi-agent collaboration to handle your request, but encountered an issue: ${e.toString()}
+
+**Alternative Approach:**
+Let me help you with a standard AI response instead:
+
+${await adapter.sendMessage(
+          text: userMessage,
+          history: state.messages,
+        ).then((msg) => msg.content).catchError((_) => 'I apologize, but I\'m having trouble processing your request right now. Please try again.')}
+
+*Tip: For complex tasks, try breaking them into smaller, specific questions for better results.*''';
+
+        final fallbackMessage = micro.ChatMessage(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          content: fallbackResponse,
+          type: micro.MessageType.assistant,
+          timestamp: DateTime.now(),
+          status: micro.MessageStatus.sent,
+          userId: null,
+          metadata: {},
+          attachments: [],
+          isEdited: false,
+          editedAt: null,
+          replyToId: null,
+          readBy: [],
+        );
+
+        // Remove typing placeholder and add fallback message
+        final updatedMessages = [
+          for (final m in state.messages)
+            if (m.id != _pendingTypingId) m,
+          fallbackMessage,
+        ];
+        state = state.copyWith(messages: updatedMessages, isLoading: false);
+        _pendingTypingId = null;
+        return;
+      }
+      
+      final agentExecDuration = DateTime.now().difference(agentStart);
+      try {
+        // LangChain agent metrics
+        final stepsCount = agentResult.steps?.length ?? 0;
+        final isSuccess = agentResult.success;
+        // AGENT_METRIC: captures LangChain agent execution wall-clock latency & step count
+        print(
+            'AGENT_METRIC phase=agent_exec duration_ms=${agentExecDuration.inMilliseconds} steps_count=$stepsCount success=$isSuccess');
+      } catch (_) {
+        print(
+            'AGENT_METRIC phase=agent_exec duration_ms=${agentExecDuration.inMilliseconds}');
+      }
+
+      // Validate result before formatting
+      if (result == null) {
+        throw Exception('Swarm execution returned null result');
+      }
+
+      // Format swarm response with better error handling
+      final responseText = _formatSwarmResponseImproved(result);
+
+      final langchainBotMessage = langchain.ChatMessage.ai(responseText);
+      final botMessage = convertLangchainChatMessage(langchainBotMessage);
+
+      // Remove typing placeholder then add final swarm message
+      final updatedMessages = [
+        for (final m in state.messages)
+          if (m.id != _pendingTypingId) m,
+      ];
+      updatedMessages.add(botMessage);
+      state = state.copyWith(messages: updatedMessages, isLoading: false);
+      _pendingTypingId = null;
+
+      print(
+          'DEBUG: LangChain agent execution completed - ${agentResult.steps?.length ?? 0} steps');
+    } catch (e, stackTrace) {
+      final agentDuration = DateTime.now().difference(agentStart);
+      print('DEBUG: LangChain agent execution error after ${agentDuration.inMilliseconds}ms: $e');
+      print('DEBUG: Stack trace: $stackTrace');
+
+      // Try fallback to direct chat when swarm fails
+      try {
+        print('DEBUG: Attempting fallback to direct chat due to swarm failure');
+        
+        // Get the first available adapter for fallback
+        final activeModels = _aiProviderConfig.getAllActiveModels();
+        ProviderAdapter? fallbackAdapter;
+        
+        for (final entry in activeModels.entries) {
+          fallbackAdapter = await _aiProviderConfig.getProvider(entry.key);
+          if (fallbackAdapter != null) break;
+        }
+        
+        if (fallbackAdapter != null) {
+          final fallbackResponse = await fallbackAdapter.sendMessage(
+            text: userMessage,
+            history: state.messages,
+          );
+
+          // Remove typing placeholder if present
+          final updatedMessages = [
+            for (final m in state.messages)
+              if (m.id != _pendingTypingId) m,
+          ];
+          updatedMessages.add(fallbackResponse);
+          state = state.copyWith(messages: updatedMessages, isLoading: false);
+          _pendingTypingId = null;
+          
+          print('DEBUG: Successfully fell back to direct chat with ${fallbackAdapter.providerId}');
+        } else {
+          throw Exception('No providers available for fallback');
+        }
+      } catch (fallbackError) {
+        print('DEBUG: Fallback also failed: $fallbackError');
+        
+        // Remove typing placeholder and show user-friendly error
+        final updatedMessages = [
+          for (final m in state.messages)
+            if (m.id != _pendingTypingId) m,
+        ];
+        
+        final errorMessage = micro.ChatMessage.assistant(
+          id: DateTime.now().toIso8601String(),
+          content: 'I encountered an issue with my advanced processing mode. Let me try a simpler approach. Could you please rephrase your request?'
+        );
+        
+        updatedMessages.add(errorMessage);
+        state = state.copyWith(messages: updatedMessages, isLoading: false);
+        _pendingTypingId = null;
+      }
     }
   }
 
-  /// Detect provider from model ID
-  String _detectProviderFromModel(String? modelId) {
-    if (modelId == null) return 'google'; // Default fallback
+  /// LLM-driven swarm routing decision. Returns a compact decision without any hardcoded heuristics.
+  Future<SwarmRouteDecision> _llmSwarmRoutingDecision(
+    BaseChatModel model,
+    String goal,
+  ) async {
+    try {
+      final system = langchain.ChatMessage.system('''
+You are a routing controller. Decide if the user's request requires multi-agent swarm planning (multiple specialists, tool usage, decomposition) or a single direct conversational response.
+Return ONLY compact JSON with these fields and nothing else:
+{
+  "use_swarm": true|false,
+  "reason": "short reason",
+  "max_specialists": integer  
+}
+If the request is simple chit-chat or can be answered directly without planning/tools, set use_swarm to false. Do not include markdown fences or explanations.
+''');
 
-    final lowerModelId = modelId.toLowerCase();
+      final human = langchain.ChatMessage.human(langchain.ChatMessageContent.text('''
+USER_GOAL:
+$goal
+'''));
 
-    // OpenAI models
-    if (lowerModelId.startsWith('gpt-') ||
-        lowerModelId.startsWith('o1-') ||
-        lowerModelId.startsWith('dall-') ||
-        lowerModelId.startsWith('whisper-') ||
-        lowerModelId.startsWith('tts-')) {
-      return 'openai';
+      final response = await model.invoke(PromptValue.chat([system, human]));
+      
+      // Defensive check for null response
+      if (response == null) {
+        print('DEBUG: Null response from routing model');
+        return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
+      }
+      
+      // Extract content as String - simplified and type-safe
+      String text = '';
+      final output = response.output;
+      
+      if (output == null) {
+        print('DEBUG: Response output is null');
+      } else if (output is langchain.AIChatMessage) {
+        // AIChatMessage.content is ChatMessageContent, not String - extract safely
+        final content = output.content;
+        if (content == null) {
+          print('DEBUG: AIChatMessage content is null');
+          text = '';
+        } else if (content is String) {
+          text = content;
+        } else {
+          text = content.toString();
+        }
+      } else if (output is langchain.SystemChatMessage) {
+        // SystemChatMessage.content is ChatMessageContent, not String - extract safely
+        final content = output.content;
+        if (content == null) {
+          print('DEBUG: SystemChatMessage content is null');
+          text = '';
+        } else if (content is String) {
+          text = content;
+        } else {
+          text = content.toString();
+        }
+      } else if (output is langchain.HumanChatMessage) {
+        // HumanChatMessage.content is ChatMessageContent, convert to string
+        final content = output.content;
+        if (content == null) {
+          print('DEBUG: HumanChatMessage content is null');
+          text = '';
+        } else if (content is String) {
+          text = content;
+        } else {
+          text = content.toString();
+        }
+      } else {
+        // Fallback to toString for unknown types
+        print('DEBUG: Unknown output type: ${output.runtimeType}');
+        text = output.toString();
+      }
+      
+      if (text.isEmpty) {
+        print('DEBUG: Empty response from routing model, defaulting to direct chat');
+        return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
+      }
+
+      if (kDebugMode) {
+        print('DEBUG: Swarm routing response: $text');
+      }
+
+      String jsonText = text.trim();
+      final match = RegExp(r"\{[\s\S]*\}").firstMatch(jsonText);
+      if (match != null) {
+        jsonText = match.group(0)!;
+      }
+
+      try {
+        // Additional validation before JSON parsing
+        if (jsonText.isEmpty || !jsonText.startsWith('{')) {
+          throw FormatException('Response does not appear to be JSON');
+        }
+        
+        final parsed = json.decode(jsonText) as Map<String, dynamic>?;
+        
+        // Validate parsing result
+        if (parsed == null) {
+          throw FormatException('JSON parsing returned null');
+        }
+        
+        // Validate required fields exist
+        if (!parsed.containsKey('use_swarm')) {
+          throw FormatException('Missing required field: use_swarm');
+        }
+        
+        // Safely extract values with proper type checking
+        final useSwarmValue = parsed['use_swarm'];
+        final use = useSwarmValue == true;
+        
+        final max = parsed['max_specialists'];
+        final maxInt = max is num ? max.toInt() : null;
+        
+        if (kDebugMode) {
+          print('DEBUG: Swarm routing decision: useSwarm=$use, maxSpecialists=$maxInt');
+        }
+        
+        return SwarmRouteDecision(useSwarm: use, maxSpecialists: maxInt);
+      } catch (e) {
+        if (kDebugMode) {
+          print('DEBUG: Failed to parse swarm routing JSON: $e');
+          print('DEBUG: Original response: $text');
+          print('DEBUG: Extracted JSON text: $jsonText');
+        }
+        // If parsing fails, default to NOT using swarm for reliability
+        return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('DEBUG: Swarm routing failed completely: $e');
+      }
+      // If everything fails, default to direct chat
+      return SwarmRouteDecision(useSwarm: false, maxSpecialists: null);
     }
+  }
 
-    // Anthropic Claude models
-    if (lowerModelId.startsWith('claude-')) {
-      return 'claude';
+  /// Heuristic swarm routing as fallback when LLM routing fails
+  SwarmRouteDecision _heuristicSwarmRouting(String userMessage) {
+    final message = userMessage.toLowerCase();
+    
+    // Complex indicators that suggest swarm collaboration
+    final complexIndicators = [
+      'analyze', 'comprehensive', 'strategy', 'implement', 'design', 'optimize',
+      'create a system', 'build', 'develop', 'architecture', 'framework',
+      'multiple', 'various', 'several', 'integrate', 'coordinate', 'manage'
+    ];
+    
+    // Domain indicators that suggest multiple specialists
+    final domainIndicators = [
+      'performance', 'security', 'user experience', 'database', 'api',
+      'testing', 'deployment', 'monitoring', 'analytics', 'infrastructure'
+    ];
+    
+    // Simple task indicators that don't need swarm
+    final simpleIndicators = [
+      'what is', 'tell me', 'explain', 'define', 'example', 'how to',
+      'can you', 'could you', 'would you', 'thank', 'hello', 'hi'
+    ];
+    
+    // Count matches
+    int complexScore = 0;
+    int domainScore = 0;
+    int simpleScore = 0;
+    
+    for (final indicator in complexIndicators) {
+      if (message.contains(indicator)) complexScore++;
     }
-
-    // Google models
-    if (lowerModelId.startsWith('gemini-') ||
-        lowerModelId.startsWith('palm-') ||
-        lowerModelId.startsWith('bard-')) {
-      return 'google';
+    
+    for (final indicator in domainIndicators) {
+      if (message.contains(indicator)) domainScore++;
     }
-
-    // ZhipuAI models
-    if (lowerModelId.startsWith('glm-') ||
-        lowerModelId.startsWith('chatglm-')) {
-      return 'zhipu-ai';
+    
+    for (final indicator in simpleIndicators) {
+      if (message.contains(indicator)) simpleScore++;
     }
+    
+    // Decision logic
+    final totalScore = complexScore + (domainScore * 2);
+    final shouldUseSwarm = totalScore >= 2 && simpleScore == 0 && message.length > 50;
+    
+    final maxSpecialists = shouldUseSwarm ? (domainScore + 1).clamp(1, 4) : null;
+    
+    print('DEBUG: Heuristic routing - complexScore: $complexScore, domainScore: $domainScore, simpleScore: $simpleScore');
+    print('DEBUG: Heuristic decision - useSwarm: $shouldUseSwarm, maxSpecialists: $maxSpecialists');
+    
+    return SwarmRouteDecision(
+      useSwarm: shouldUseSwarm,
+      maxSpecialists: maxSpecialists,
+    );
+  }
 
-    // Cohere models
-    if (lowerModelId.startsWith('command-') ||
-        lowerModelId.startsWith('base-') ||
-        lowerModelId.startsWith('embed-')) {
-      return 'cohere';
+  /// Format swarm result for display
+  /// Improved swarm response formatting with better error handling
+  String _formatSwarmResponseImproved(dynamic swarmResult) {
+    try {
+      final buffer = StringBuffer();
+
+      buffer.writeln('🤖 **Swarm Intelligence Analysis**\n');
+      
+      // Safely extract metrics with null checks
+      try {
+        final specialistsUsed = swarmResult?.totalSpecialistsUsed ?? 0;
+        final duration = swarmResult?.totalDuration?.inSeconds ?? 0;
+        final cost = swarmResult?.estimatedCost?.toStringAsFixed(4) ?? '0.0000';
+        
+        buffer.writeln('Specialists used: $specialistsUsed');
+        buffer.writeln('Duration: ${duration}s');
+        buffer.writeln('Estimated cost: \$$cost\n');
+      } catch (e) {
+        buffer.writeln('Metrics unavailable\n');
+      }
+
+      // Check for errors
+      try {
+        final error = swarmResult?.error;
+        if (error != null && error.toString().isNotEmpty) {
+          buffer.writeln('⚠️ Planning error encountered: $error');
+          buffer.writeln('Fallback specialist used. Results may be limited.\n');
+        }
+      } catch (e) {
+        // Ignore error extraction issues
+      }
+
+      // Try to get the main answer first
+      try {
+        final finalAnswer = swarmResult?.finalAnswer;
+        if (finalAnswer != null && finalAnswer.toString().isNotEmpty) {
+          buffer.writeln('**Answer:**\n$finalAnswer\n');
+          return buffer.toString(); // Early return if we have a good answer
+        }
+      } catch (e) {
+        // Continue to other formatting options
+      }
+
+      // Fallback to blackboard facts
+      buffer.writeln('### Findings:\n');
+
+      try {
+        final facts = swarmResult?.blackboard?.getAllFacts() ?? {};
+        
+        // Check for clarification needs
+        final needsClar = facts['clarification_needed'] == true;
+        if (needsClar) {
+          buffer.writeln('📝 **Clarification Required Before Planning**');
+          final reason = facts['clarification_reason']?.toString();
+          if (reason != null && reason.isNotEmpty) {
+            buffer.writeln('- Reason: $reason');
+          }
+          final questions = facts['clarification_questions'];
+          if (questions is List && questions.isNotEmpty) {
+            buffer.writeln('\nPlease answer the following to proceed:');
+            for (int i = 0; i < questions.length; i++) {
+              buffer.writeln('${i + 1}. ${questions[i]}');
+            }
+          }
+          buffer.writeln('\nAfter answering, re-submit your goal to continue with specialist planning.');
+          buffer.writeln('\n---');
+        }
+
+        // Display key facts
+        if (facts.isNotEmpty) {
+          for (final entry in facts.entries) {
+            if (entry.key != 'clarification_needed' && 
+                entry.key != 'clarification_reason' && 
+                entry.key != 'clarification_questions') {
+              buffer.writeln('**${entry.key}**: ${entry.value}');
+            }
+          }
+        } else {
+          buffer.writeln('No detailed findings available.');
+        }
+      } catch (e) {
+        buffer.writeln('Unable to extract detailed findings.');
+      }
+
+      // Add status information
+      try {
+        final specialistsUsed = swarmResult?.totalSpecialistsUsed ?? 0;
+        final error = swarmResult?.error;
+        final converged = swarmResult?.converged ?? false;
+        
+        if (specialistsUsed == 0 && error != null) {
+          buffer.writeln('\n⚠️ No specialists executed due to planning failure. Try re-running or using a different model.');
+        } else if (converged) {
+          buffer.writeln('\n✅ Goal achieved with high confidence');
+        } else {
+          buffer.writeln('\n⚠️ Partial completion - some objectives may require further analysis');
+        }
+      } catch (e) {
+        buffer.writeln('\nStatus information unavailable');
+      }
+
+      buffer.writeln('\n*This response was generated using multi-agent intelligence collaboration.*');
+      return buffer.toString();
+    } catch (e) {
+      // Ultimate fallback if everything fails
+      return '''🤖 **Swarm Intelligence Analysis**
+
+I attempted to analyze your request using multi-agent collaboration, but encountered formatting issues.
+
+**Error details:** $e
+
+**Suggestion:** Please try rephrasing your request or break it down into smaller, more specific questions.
+
+*You can also try switching between Swarm AI and Direct Chat modes in the settings.*''';
     }
+  }
 
-    // Mistral models
-    if (lowerModelId.startsWith('mistral-') ||
-        lowerModelId.startsWith('codestral')) {
-      return 'mistral';
-    }
-
-    // Stability AI models
-    if (lowerModelId.contains('stable-diffusion') ||
-        lowerModelId.contains('sdxl')) {
-      return 'stability';
-    }
-
-    // Default to Google for unknown models
-    return 'google';
+  /// Legacy swarm response formatting (kept for compatibility)
+  String _formatSwarmResponse(dynamic swarmResult) {
+    return _formatSwarmResponseImproved(swarmResult);
   }
 
   /// Execute agent mode with MCP tools
@@ -458,26 +921,27 @@ class ChatNotifier extends StateNotifier<ChatState> {
     try {
       // Get enabled MCP server IDs (only connected servers)
       final mcpServerIds = _getEnabledMCPServerIds();
-      
+
       print('DEBUG: Agent mode - Using MCP servers: $mcpServerIds');
-      
+
       // Create agent with MCP tools
-      final agent = await _agentService!.createAgent(
+      final agentId = await _agentService!.createAgent(
         name: 'Micro',
-        goal: 'Assist user with their request',
         mcpServerIds: mcpServerIds.isNotEmpty ? mcpServerIds : null,
       );
-      
+
       // Execute agent with user's query
-      final result = await agent.execute(query: userMessage);
-      
+      final result = await _agentService!.executeGoal(
+        goal: userMessage,
+        agentId: agentId,
+      );
+
       // Add agent response with tool execution steps
       _addAgentResponseWithSteps(result);
-      
     } catch (e, stackTrace) {
       print('DEBUG: Agent execution error: $e');
       print('DEBUG: Stack trace: $stackTrace');
-      
+
       state = state.copyWith(
         error: 'Agent execution failed: $e',
         isLoading: false,
@@ -488,17 +952,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Get list of enabled (connected) MCP server IDs
   List<String> _getEnabledMCPServerIds() {
     if (_mcpService == null) return [];
-    
+
     final configs = _mcpService!.getServerConfigs();
     final enabledServers = <String>[];
-    
+
     for (final config in configs) {
       final state = _mcpService!.getServerState(config.id);
       if (state != null && state.status == MCPConnectionStatus.connected) {
         enabledServers.add(config.id);
       }
     }
-    
+
     return enabledServers;
   }
 
@@ -506,14 +970,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _addAgentResponseWithSteps(agent_types.AgentResult result) {
     // Format agent response with tool steps
     final stepsText = StringBuffer();
-    
+
     if (result.steps.isNotEmpty) {
       stepsText.writeln('\n---\n**Execution Steps:**\n');
-      
+
       for (var i = 0; i < result.steps.length; i++) {
         final step = result.steps[i];
         stepsText.writeln('${i + 1}. ${step.type.name}: ${step.description}');
-        
+
         if (step.input != null) {
           stepsText.writeln('   Input: ${step.input}');
         }
@@ -525,18 +989,27 @@ class ChatNotifier extends StateNotifier<ChatState> {
         }
       }
     }
-    
+
     final fullResponse = result.result + stepsText.toString();
-    
+
     // Convert to chat message format
-    final langchainAssistantMessage =
-        ChatMessage.ai(ChatMessageContent.text(fullResponse));
-    final assistantMessage = convertLangchainChatMessage(langchainAssistantMessage);
-    
+    final langchainAssistantMessage = langchain.ChatMessage.ai(fullResponse);
+    final assistantMessage =
+        convertLangchainChatMessage(langchainAssistantMessage);
+
     state = state.copyWith(
       messages: [...state.messages, assistantMessage],
       isLoading: false,
       error: null,
     );
   }
+}
+
+// NOTE: Removed _SwarmLanguageModelAdapter due to type mismatch with
+// AgentService.executeSwarmGoal. See _executeSwarmMode for details.
+
+/// Simple latency logging helper
+void _logLatency(DateTime start, {required String mode}) {
+  final elapsed = DateTime.now().difference(start);
+  print('LATENCY [$mode]: ${elapsed.inMilliseconds} ms total');
 }

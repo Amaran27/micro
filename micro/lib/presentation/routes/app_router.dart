@@ -10,9 +10,10 @@ import '../pages/workflows_page.dart';
 import '../pages/onboarding_page.dart';
 import '../pages/unified_provider_settings.dart';
 import '../providers/app_providers.dart';
-import '../pages/agent_dashboard_page.dart';
+// import '../pages/agent_dashboard_page.dart'; // Hidden per Swarm-first product direction
 import '../../features/mcp/presentation/pages/mcp_server_settings_page.dart';
 import '../pages/tools_page.dart';
+import '../../features/settings/presentation/pages/swarm_settings_page.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -78,6 +79,12 @@ class AppRouter {
                 name: 'mcp',
                 builder: (context, state) => const MCPServerSettingsPage(),
               ),
+              // Swarm Intelligence Settings
+              GoRoute(
+                path: 'swarm',
+                name: 'swarm',
+                builder: (context, state) => const SwarmSettingsPage(),
+              ),
             ],
           ),
 
@@ -115,29 +122,29 @@ class AppRouter {
             builder: (context, state) => const AuditPage(),
           ),
 
-          // Agents
-          GoRoute(
-            path: RouteConstants.agents,
-            name: 'agents',
-            redirect: (context, state) => RouteConstants.agentDashboard,
-          ),
+          // Agents - Hidden per Swarm-first product direction
+          // GoRoute(
+          //   path: RouteConstants.agents,
+          //   name: 'agents',
+          //   redirect: (context, state) => RouteConstants.agentDashboard,
+          // ),
 
-          // Agent Dashboard
-          GoRoute(
-            path: RouteConstants.agentDashboard,
-            name: 'agent_dashboard',
-            builder: (context, state) => const AgentDashboardPage(),
-          ),
+          // // Agent Dashboard
+          // GoRoute(
+          //   path: RouteConstants.agentDashboard,
+          //   name: 'agent_dashboard',
+          //   builder: (context, state) => const AgentDashboardPage(),
+          // ),
 
-          // Agent Detail
-          GoRoute(
-            path: RouteConstants.agentDetail,
-            name: 'agent_detail',
-            builder: (context, state) {
-              final agentId = state.pathParameters['id']!;
-              return AgentDetailPage(agentId: agentId);
-            },
-          ),
+          // // Agent Detail
+          // GoRoute(
+          //   path: RouteConstants.agentDetail,
+          //   name: 'agent_detail',
+          //   builder: (context, state) {
+          //     final agentId = state.pathParameters['id']!;
+          //     return AgentDetailPage(agentId: agentId);
+          //   },
+          // ),
         ],
       ),
     ],

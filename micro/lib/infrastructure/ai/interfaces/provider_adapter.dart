@@ -1,5 +1,6 @@
 import '../../../domain/models/chat/chat_message.dart' as micro;
 import 'provider_config.dart';
+import 'package:langchain/langchain.dart';
 
 /// Unified interface for all AI providers
 /// This adapter pattern abstracts provider-specific implementations
@@ -24,11 +25,25 @@ abstract class ProviderAdapter {
     required List<micro.ChatMessage> history,
   });
 
+  /// Send a message and stream response tokens in real-time
+  /// Returns a stream of partial content updates
+  Stream<String> sendMessageStream({
+    required String text,
+    required List<micro.ChatMessage> history,
+  });
+
+  /// Check if this provider supports streaming
+  bool get supportsStreaming => false;
+
   /// Switch to a different model
   Future<bool> switchModel(String newModel);
 
   /// Get available models for this provider
   Future<List<String>> getAvailableModels();
+
+  /// Get underlying LangChain BaseChatModel for advanced use cases (e.g., Swarm)
+  /// Returns null if provider doesn't use LangChain or model not initialized
+  BaseChatModel? getLangChainModel();
 
   /// Dispose of resources
   void dispose();

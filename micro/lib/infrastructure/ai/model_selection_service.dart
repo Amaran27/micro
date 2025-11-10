@@ -40,6 +40,9 @@ class ModelSelectionService {
 
   bool _isInitialized = false;
 
+  /// Check if the service has been initialized
+  bool get isInitialized => _isInitialized;
+
   /// Initialize the model selection service
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -55,6 +58,10 @@ class ModelSelectionService {
 
     // Normalize any legacy/alias provider IDs to canonical forms
     _normalizeProviderAliases();
+
+    // CRITICAL: Save normalized state back to storage to ensure persistence
+    await _saveFavoriteModels();
+    await _saveActiveModels();
 
     _isInitialized = true;
     AppLogger().info(
@@ -521,38 +528,43 @@ class ModelSelectionService {
 
   /// Get all available models for a provider
   List<String> getAvailableModels(String providerId) {
-    return _availableModels[providerId] ?? [];
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    return _availableModels[normalizedProviderId] ?? [];
   }
 
   /// Set favorite models for a provider
   Future<void> setFavoriteModels(String providerId, List<String> models) async {
-    _favoriteModels[providerId] = models;
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    _favoriteModels[normalizedProviderId] = models;
     await _saveFavoriteModels();
   }
 
   /// Add a model to favorites
   Future<void> addFavoriteModel(String providerId, String model) async {
-    final favorites = _favoriteModels[providerId] ?? [];
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    final favorites = _favoriteModels[normalizedProviderId] ?? [];
     if (!favorites.contains(model)) {
       favorites.add(model);
-      _favoriteModels[providerId] = favorites;
+      _favoriteModels[normalizedProviderId] = favorites;
       await _saveFavoriteModels();
     }
   }
 
   /// Remove a model from favorites
   Future<void> removeFavoriteModel(String providerId, String model) async {
-    final favorites = _favoriteModels[providerId] ?? [];
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    final favorites = _favoriteModels[normalizedProviderId] ?? [];
     if (favorites.contains(model)) {
       favorites.remove(model);
-      _favoriteModels[providerId] = favorites;
+      _favoriteModels[normalizedProviderId] = favorites;
       await _saveFavoriteModels();
     }
   }
 
   /// Get favorite models for a provider
   List<String> getFavoriteModels(String providerId) {
-    return _favoriteModels[providerId] ?? [];
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    return _favoriteModels[normalizedProviderId] ?? [];
   }
 
   /// Get all favorite models across all providers
@@ -567,21 +579,27 @@ class ModelSelectionService {
 
   /// Check if provider has any favorite models
   bool hasFavoriteModels(String providerId) {
-    final favorites = _favoriteModels[providerId];
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    final favorites = _favoriteModels[normalizedProviderId];
     return favorites != null && favorites.isNotEmpty;
   }
 
   /// Set active model for a provider
   Future<void> setActiveModel(String providerId, String model) async {
-    _activeModels[providerId] = model;
+    // Normalize provider ID to canonical form before saving
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    _activeModels[normalizedProviderId] = model;
     await _saveActiveModels();
   }
 
   /// Get active model for a provider
   String? getActiveModel(String providerId) {
-    final activeModel =
-        _activeModels[providerId] ?? _favoriteModels[providerId]?.first;
-    print('DEBUG: getActiveModel for $providerId: $activeModel');
+    // Normalize provider ID to canonical form before lookup
+    final normalizedProviderId = _normalizeProviderId(providerId);
+    final activeModel = _activeModels[normalizedProviderId] ??
+        _favoriteModels[normalizedProviderId]?.first;
+    print(
+        'DEBUG: getActiveModel for $providerId (normalized: $normalizedProviderId): $activeModel');
     return activeModel;
   }
 
@@ -755,6 +773,17 @@ class ModelSelectionService {
     _activeModels.clear();
     await _storage.delete(key: 'favorite_models');
     await _storage.delete(key: 'active_models');
+  }
+
+  /// Normalize a single provider ID to its canonical form
+  String _normalizeProviderId(String providerId) {
+    // Map of all aliases to canonical forms
+    const aliasMap = {
+      'zhipuai': 'zhipu-ai',
+      'z_ai': 'zhipu-ai',
+      'claude': 'anthropic',
+    };
+    return aliasMap[providerId] ?? providerId;
   }
 
   /// Normalize aliased provider IDs into canonical keys to avoid duplicates

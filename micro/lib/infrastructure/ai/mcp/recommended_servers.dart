@@ -9,7 +9,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Access and manipulate local files and directories. Provides tools for reading, writing, and managing files.',
     icon: '📁',
     transportType: MCPTransportType.stdio,
-    supportedPlatforms: ['desktop'],
+    platform: MCPServerPlatform.desktop,
     installCommand: 'npx -y @modelcontextprotocol/server-filesystem',
     defaultConfig: {
       'command': 'npx',
@@ -25,7 +25,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Interact with GitHub repositories, issues, and pull requests. Create branches, commits, and manage code reviews.',
     icon: '🐙',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
+    platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3000/mcp',
       'headers': {
@@ -42,7 +42,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Search the web using Brave Search API. Get up-to-date information from the internet.',
     icon: '🔍',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
+    platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3001/mcp',
       'headers': {
@@ -59,7 +59,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Connect to PostgreSQL databases. Query, insert, update, and manage database records.',
     icon: '🐘',
     transportType: MCPTransportType.stdio,
-    supportedPlatforms: ['desktop'],
+    platform: MCPServerPlatform.desktop,
     installCommand: 'npx -y @modelcontextprotocol/server-postgres',
     defaultConfig: {
       'command': 'npx',
@@ -75,7 +75,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Send messages, read channels, and manage Slack workspaces. Automate team communication.',
     icon: '💬',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
+    platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3002/mcp',
       'headers': {
@@ -92,7 +92,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Access and manage files in Google Drive. Read, write, and organize documents and spreadsheets.',
     icon: '📊',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
+    platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3003/mcp',
       'headers': {
@@ -109,7 +109,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Execute git commands and manage repositories. Clone, commit, push, pull, and manage branches.',
     icon: '🌿',
     transportType: MCPTransportType.stdio,
-    supportedPlatforms: ['desktop'],
+    platform: MCPServerPlatform.desktop,
     installCommand: 'npx -y @modelcontextprotocol/server-git',
     defaultConfig: {
       'command': 'npx',
@@ -125,7 +125,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Store and retrieve information across conversations. Create long-term memory for your AI assistant.',
     icon: '🧠',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
+    platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:3004/mcp',
     },
@@ -139,7 +139,7 @@ final List<RecommendedMCPServer> recommendedMCPServers = [
     description: 'Connect to your own MCP server. Specify the connection details manually.',
     icon: '⚙️',
     transportType: MCPTransportType.http,
-    supportedPlatforms: ['desktop', 'mobile'],
+    platform: MCPServerPlatform.both,
     defaultConfig: {
       'url': 'http://localhost:8000/mcp',
     },

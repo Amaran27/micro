@@ -292,6 +292,16 @@ class MCPService {
     return state?.availableTools ?? [];
   }
 
+  /// Alias for getAvailableTools (kept for backward compatibility)
+  List<MCPTool> getServerTools(String serverId) {
+    return getAvailableTools(serverId);
+  }
+
+  /// Get all server IDs
+  List<String> getAllServerIds() {
+    return _serverConfigs.keys.toList();
+  }
+
   /// Get all available tools from all connected servers
   List<MCPTool> getAllAvailableTools() {
     final tools = <MCPTool>[];
@@ -471,8 +481,8 @@ class MCPService {
       // Start process
       final process = await Process.start(
         config.command!,
-        config.arguments ?? [],
-        environment: config.environment,
+        config.arguments ?? config.args ?? [],
+        environment: config.environment ?? config.env,
       );
       _stdioProcesses[serverId] = process;
 

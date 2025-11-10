@@ -20,6 +20,13 @@ enum MCPConnectionStatus {
   error,
 }
 
+/// Platform support for MCP servers
+enum MCPServerPlatform {
+  desktop,
+  mobile,
+  both,
+}
+
 /// MCP Server Configuration
 @JsonSerializable()
 class MCPServerConfig {
@@ -35,7 +42,11 @@ class MCPServerConfig {
   // For stdio
   final String? command;
   final List<String>? args;
+  @JsonKey(includeFromJson: true, includeToJson: false)
+  final List<String>? arguments; // Alias for args - read from JSON but don't write
   final Map<String, String>? env;
+  @JsonKey(includeFromJson: true, includeToJson: false)
+  final Map<String, String>? environment; // Alias for env - read from JSON but don't write
   
   final bool autoConnect;
   final bool enabled;
@@ -49,7 +60,9 @@ class MCPServerConfig {
     this.headers,
     this.command,
     this.args,
+    this.arguments,
     this.env,
+    this.environment,
     this.autoConnect = false,
     this.enabled = true,
   });
@@ -68,7 +81,9 @@ class MCPServerConfig {
     Map<String, String>? headers,
     String? command,
     List<String>? args,
+    List<String>? arguments,
     Map<String, String>? env,
+    Map<String, String>? environment,
     bool? autoConnect,
     bool? enabled,
   }) {
@@ -81,7 +96,9 @@ class MCPServerConfig {
       headers: headers ?? this.headers,
       command: command ?? this.command,
       args: args ?? this.args,
+      arguments: arguments ?? this.arguments,
       env: env ?? this.env,
+      environment: environment ?? this.environment,
       autoConnect: autoConnect ?? this.autoConnect,
       enabled: enabled ?? this.enabled,
     );
@@ -188,7 +205,7 @@ class RecommendedMCPServer {
   final String description;
   final String icon;
   final MCPTransportType transportType;
-  final List<String> supportedPlatforms; // ['desktop', 'mobile']
+  final MCPServerPlatform platform;
   final String? installCommand;
   final Map<String, dynamic> defaultConfig;
   final String? documentationUrl;
@@ -199,9 +216,24 @@ class RecommendedMCPServer {
     required this.description,
     required this.icon,
     required this.transportType,
-    required this.supportedPlatforms,
+    required this.platform,
     this.installCommand,
     required this.defaultConfig,
     this.documentationUrl,
   });
+
+  /// Get supported platforms as list of strings (derived from platform enum)
+  List<String> get supportedPlatforms {
+    switch (platform) {
+      case MCPServerPlatform.desktop:
+        return ['desktop'];
+      case MCPServerPlatform.mobile:
+        return ['mobile'];
+      case MCPServerPlatform.both:
+        return ['desktop', 'mobile'];
+    }
+  }
+
+  /// Alias for documentationUrl for backward compatibility
+  String? get docUrl => documentationUrl;
 }

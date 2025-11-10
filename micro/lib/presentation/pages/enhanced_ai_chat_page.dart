@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_gen_ai_chat_ui/flutter_gen_ai_chat_ui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
-import 'package:micro/features/chat/presentation/providers/chat_provider.dart';
+import '../../features/chat/presentation/providers/chat_provider.dart';
 import 'package:micro/presentation/providers/app_providers.dart';
 import 'package:micro/infrastructure/ai/provider_registry.dart';
 import 'package:micro/presentation/providers/provider_config_providers.dart';
-import 'package:micro/features/agent/providers/agent_execution_ui_provider.dart';
+// Removed: agent_execution_ui_provider (agent panel deprecated)
+import 'package:micro/features/settings/presentation/providers/swarm_settings_providers.dart';
+import 'package:micro/infrastructure/ai/model_selection_service.dart';
 
 /// Enhanced AI Chat Page with Markdown Support
 ///
@@ -32,9 +34,9 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   // Tracks whether\u00a0loading dialog is currently visible so we can dismiss safely.
   bool _loadingDialogVisible = false;
 
-  // Agent mode state - simplified per Micro 2.0 spec
+  // Agent and Swarm modes for different task complexities
   bool _agentMode = false;
-  final bool _autoDetectAgentCommands = true;
+  bool _swarmMode = false;
 
   @override
   void initState() {
@@ -80,12 +82,26 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
   void _loadInitialModel() async {
     try {
-      // The chat provider handles model selection internally
-      // Just initialize the UI placeholder for now
-      setState(() {
-        _currentModelId = null;
-        _currentModel = 'Select a model';
-      });
+      // Load the actual selected model from storage
+      final prefs = ref.read(sharedPreferencesProvider);
+      final modelId = prefs.getString('last_selected_model');
+
+      print('DEBUG: _loadInitialModel - last_selected_model: $modelId');
+
+      if (modelId != null && modelId.isNotEmpty) {
+        setState(() {
+          _currentModelId = modelId;
+          _currentModel = _formatModelName(modelId);
+        });
+        print('DEBUG: UI loaded model: $_currentModel');
+      } else {
+        // No model selected yet, show placeholder
+        setState(() {
+          _currentModelId = null;
+          _currentModel = 'Select a model';
+        });
+        print('DEBUG: No model selected');
+      }
     } catch (e) {
       print('DEBUG: UI error loading model: $e');
       setState(() {
@@ -114,12 +130,20 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
   /// Convert our app's ChatMessage to the format expected by flutter_gen_ai_chat_ui
   ChatMessage _convertToChatMessage(micro.ChatMessage message) {
+    // Attach quick replies and system flag if present in metadata
+    final quickReplies = message.metadata?['quickReplies'] as List<String>?;
+    final isSystem = message.type == micro.MessageType.system ||
+        message.metadata?['system'] == true;
     return ChatMessage(
       text: message.content,
       user: message.type == micro.MessageType.user
           ? ChatUser(id: 'user', firstName: 'You')
           : ChatUser(id: 'ai', firstName: 'AI'),
       createdAt: message.timestamp,
+      isMarkdown: true, // Use built-in markdown support
+      customProperties: {
+        if (message.type == micro.MessageType.assistant) 'isStreaming': true,
+      },
     );
   }
 
@@ -127,70 +151,30 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   Future<void> _handleSendMessage(ChatMessage message) async {
     if (message.text.trim().isEmpty) return;
 
-    // Auto-detect agent commands
-    if (_autoDetectAgentCommands && _isAgentCommand(message.text)) {
-      // Enable agent mode if not already enabled
-      if (!_agentMode) {
-        setState(() {
-          _agentMode = true;
-        });
-      }
-
-      // Handle agent command (will be expanded later)
-      await _handleAgentCommand(message.text);
+    // Prevent double-send while a response is in progress (fixes duplicate streaming)
+    final chatState = ref.read(chatProvider);
+    if (chatState.isLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please wait for the current response to finish.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
       return;
     }
 
     // Add user message to our provider
     final chatNotifier = ref.read(chatProvider.notifier);
-    await chatNotifier.sendMessage(message.text);
+    await chatNotifier.sendMessage(
+      message.text,
+      agentMode: false,
+      swarmMode: _swarmMode,
+    );
 
     // The AI response will be handled by the listener below
   }
 
-  /// Check if message is an agent command
-  bool _isAgentCommand(String text) {
-    return text.trim().startsWith('/agent') ||
-        text.trim().startsWith('/create') ||
-        text.trim().startsWith('/execute') ||
-        text.trim().startsWith('/status');
-  }
-
-  /// Handle agent command
-  Future<void> _handleAgentCommand(String command) async {
-    final commandText = command.trim();
-
-    // Add command as user message
-    final chatMessage = ChatMessage(
-      text: commandText,
-      user: const ChatUser(id: 'user', firstName: 'You'),
-      createdAt: DateTime.now(),
-    );
-    _messagesController.addMessage(chatMessage);
-
-    // Show response message
-    final responseMessage = ChatMessage(
-      text: _getAgentCommandResponse(commandText),
-      user: const ChatUser(id: 'ai', firstName: 'AI Agent'),
-      createdAt: DateTime.now(),
-    );
-    _messagesController.addMessage(responseMessage);
-  }
-
-  /// Get response for agent command
-  String _getAgentCommandResponse(String command) {
-    if (command.startsWith('/agent create')) {
-      return 'Agent creation is not yet implemented. Use the agent panel to create agents.';
-    } else if (command.startsWith('/agent list')) {
-      return 'No agents created yet. Use the agent panel to create your first agent.';
-    } else if (command.startsWith('/agent execute')) {
-      return 'Agent execution is not yet implemented. Create an agent first.';
-    } else if (command.startsWith('/agent status')) {
-      return 'Agent status monitoring is not yet implemented.';
-    } else {
-      return 'Unknown agent command. Available commands: /agent create, /agent list, /agent execute, /agent status';
-    }
-  }
+  // Agent command helpers removed with agent UI simplification
 
   @override
   Widget build(BuildContext context) {
@@ -198,29 +182,35 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
 
     // Listen for changes in the chat state and update the UI
     ref.listen<ChatState>(chatProvider, (previous, next) {
-      // Check if new messages were added
-      if (next.messages.length > (previous?.messages.length ?? 0)) {
-        // Get new messages
-        final newMessages = next.messages.sublist(
-          previous?.messages.length ?? 0,
-        );
+      final prev = previous?.messages ?? const <micro.ChatMessage>[];
+      final curr = next.messages;
 
-        print('DEBUG: New messages detected: ${newMessages.length}');
+      // Build quick lookup of previous IDs
+      final prevIds = {for (final m in prev) m.id};
+      final currIds = {for (final m in curr) m.id};
+
+      // Any messages present now that were not present before are "new"
+      final addedIds = currIds.difference(prevIds);
+
+      if (addedIds.isNotEmpty) {
+        final newMessages = curr.where((m) => addedIds.contains(m.id)).toList();
+        print('DEBUG: New messages detected by ID diff: ${newMessages.length}');
         for (final message in newMessages) {
           print(
               'DEBUG: Adding message to UI: ${message.type} - ${message.content}');
           final chatMessage = _convertToChatMessage(message);
-          print('DEBUG: Converted message: ${chatMessage.text}');
           _messagesController.addMessage(chatMessage);
         }
       }
+
+      // Content updates are no longer handled here - flutter_gen_ai_chat_ui handles streaming internally
     });
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            // Custom header with model selection
+            // Custom header with model selection (responsive, no overflow)
             Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -234,129 +224,148 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'AI Assistant',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  // Model selection dropdown
-                  GestureDetector(
-                    onTap: () => _showModelSelection(context),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: _currentModelId != null
-                            ? Theme.of(context).colorScheme.primaryContainer
-                            : Theme.of(context).colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _currentModelId != null
-                                ? Icons.smart_toy
-                                : Icons.warning,
-                            size: 16,
-                            color: _currentModelId != null
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onErrorContainer,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'AI Assistant',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _currentModel,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: _currentModelId != null
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .onPrimaryContainer
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .onErrorContainer,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert),
+                        onPressed: () => _showOptions(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      // Model selection dropdown
+                      GestureDetector(
+                        onTap: () => _showModelSelection(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _currentModelId != null
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _currentModelId != null
+                                    ? Icons.smart_toy
+                                    : Icons.warning,
+                                size: 16,
+                                color: _currentModelId != null
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onErrorContainer,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _currentModel,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: _currentModelId != null
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .onPrimaryContainer
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onErrorContainer,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.keyboard_arrow_down,
+                                size: 16,
+                                color: _currentModelId != null
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onErrorContainer,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Agent toggle removed (Swarm-first UX)
+
+                      // Swarm mode toggle
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _swarmMode
+                              ? Theme.of(context).colorScheme.secondaryContainer
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Swarm',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: _swarmMode
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .onSecondaryContainer
+                                    : Theme.of(context).colorScheme.onSurface,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.keyboard_arrow_down,
-                            size: 16,
-                            color: _currentModelId != null
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onErrorContainer,
-                          ),
-                        ],
+                            Switch(
+                              value: _swarmMode,
+                              onChanged: (value) {
+                                setState(() {
+                                  _swarmMode = value;
+                                });
+                              },
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Agent mode toggle
-                  Container(
-                    decoration: BoxDecoration(
-                      color: _agentMode
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Agent',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: _agentMode
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                : Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Switch(
-                          value: _agentMode,
-                          onChanged: (value) {
-                            setState(() {
-                              _agentMode = value;
-                            });
-                          },
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert),
-                    onPressed: () {
-                      _showOptions(context);
-                    },
+                    ],
                   ),
                 ],
               ),
             ),
 
-            // Agent mode indicator - simplified (no panel per Micro 2.0 spec)
-            if (_agentMode)
+            // Agent mode indicator removed (Swarm-first UX)
+
+            // Swarm mode indicator
+            if (_swarmMode)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
+                  color: Theme.of(context).colorScheme.secondaryContainer,
                   border: Border(
                     top: BorderSide(
                       color: Theme.of(context).dividerColor,
@@ -367,32 +376,41 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.smart_toy,
+                      Icons.groups,
                       size: 16,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: Theme.of(context).colorScheme.secondary,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'Micro Agent Mode Active',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    Expanded(
+                      child: Text(
+                        'Swarm Intelligence Mode Active',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Consumer(
                       builder: (context, ref, _) {
-                        final connectedServers = ref.watch(connectedMCPServersProvider);
-                        final toolCount = connectedServers.fold<int>(
-                          0,
-                          (sum, server) => sum + server.availableTools.length,
+                        final asyncMax = ref.watch(maxSpecialistsProvider);
+                        final label = asyncMax.when(
+                          data: (v) => 'Max $v specialists',
+                          loading: () => 'Configuring…',
+                          error: (_, __) => 'Swarm ready',
                         );
                         return Text(
-                          'Using $toolCount tools from ${connectedServers.length} servers',
+                          label,
                           style: TextStyle(
                             fontSize: 11,
-                            color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.7),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSecondaryContainer
+                                .withOpacity(0.8),
                           ),
                         );
                       },
@@ -423,8 +441,9 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 // Configuration
                 enableAnimation: true,
                 enableMarkdownStreaming: true,
-                streamingWordByWord: false,
-                streamingDuration: const Duration(milliseconds: 30),
+                // Enable quicker perceived streaming animation after reply arrives
+                streamingWordByWord: true,
+                streamingDuration: const Duration(milliseconds: 12),
 
                 // Input options
                 inputOptions: InputOptions(
@@ -432,9 +451,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                   textInputAction: TextInputAction.newline,
                   sendOnEnter: true,
                   decoration: InputDecoration(
-                    hintText: _agentMode
-                        ? 'Type message or /agent command...'
-                        : 'Type your message...',
+                    hintText: 'Type your message...',
                     hintStyle: TextStyle(
                       color: Colors.grey[500],
                     ),
@@ -487,26 +504,13 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                   showCenteredIndicator: true,
                 ),
 
-                // Example questions
-                exampleQuestions: [
-                  if (!_agentMode) ...[
-                    ExampleQuestion(question: 'What can you help me with?'),
-                    ExampleQuestion(
-                        question: 'Explain a complex concept in simple terms'),
-                    ExampleQuestion(question: 'Help me solve a problem'),
-                  ],
-                  if (_agentMode) ...[
-                    ExampleQuestion(
-                        question: '/agent create research_assistant'),
-                    ExampleQuestion(question: '/agent status'),
-                    ExampleQuestion(question: 'Execute analysis on my data'),
-                  ],
-                  ExampleQuestion(question: 'Write some code for me'),
-                ],
+                // Example questions with custom styling
+                exampleQuestions: _buildExampleQuestions(context),
 
-                // Welcome message
-                welcomeMessageConfig: WelcomeMessageConfig(
-                  title: _agentMode ? 'AI Agent Mode' : 'AI Assistant',
+                // Welcome message (no duplicate header title)
+                welcomeMessageConfig: const WelcomeMessageConfig(
+                  title: null,
+                  questionsSectionTitle: 'Try one of these:',
                 ),
 
                 // Scroll behavior
@@ -536,6 +540,15 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                 onTap: () {
                   Navigator.pop(context);
                   _showModelSelection(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.groups),
+                title: const Text('Swarm Settings'),
+                subtitle: const Text('Configure swarm intelligence'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/settings/swarm');
                 },
               ),
               ListTile(
@@ -587,6 +600,50 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     );
   }
 
+  /// Build example questions with custom styling
+  List<ExampleQuestion> _buildExampleQuestions(BuildContext context) {
+    // Lighter outlined pill style (no dark/black fill)
+    final questionConfig = ExampleQuestionConfig(
+      containerDecoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      containerPadding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      textStyle: TextStyle(
+        color: Theme.of(context).colorScheme.onSurface,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+      iconColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+    );
+
+    final questions = <ExampleQuestion>[];
+
+    questions.addAll([
+      ExampleQuestion(
+          question: 'What can you help me with?', config: questionConfig),
+      ExampleQuestion(
+          question: 'Explain a complex concept in simple terms',
+          config: questionConfig),
+      ExampleQuestion(
+          question: 'Help me solve a problem', config: questionConfig),
+    ]);
+
+    questions.addAll([
+      ExampleQuestion(
+          question: 'Write some code for me', config: questionConfig),
+      ExampleQuestion(
+          question: 'Summarize this document', config: questionConfig),
+      ExampleQuestion(question: 'Generate test cases', config: questionConfig),
+    ]);
+
+    return questions;
+  }
+
   /// Build agent panel content
   // Removed: _buildAgentPanelContent() - No longer needed per Micro 2.0 spec
   // Agent mode is now just a toggle that enables tool use, no separate panel
@@ -594,245 +651,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
   // Removed: _buildAgentCreationTab() - No longer needed per Micro 2.0 spec
   // Agent configuration is handled through agent mode toggle + Tools page
 
-  /// Build agent execution tab
-  Widget _buildAgentExecutionTab(WidgetRef ref) {
-    final availableTools = ref.watch(availableToolsProvider);
-    final executionSteps = ref.watch(executionStepsProvider);
-    final isExecuting = ref.watch(executionStatusProvider);
-
-    // Filter out null tools
-    final validTools = availableTools.where((tool) => tool != null).toList();
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Available Tools Section
-        Text(
-          'Available Tools (${validTools.length})',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        if (validTools.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: Text('No tools available'),
-          )
-        else
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: validTools.map((tool) {
-              final toolName = (tool as dynamic)?.name?.toString() ?? 'Unknown';
-              final description = (tool as dynamic)?.description?.toString() ??
-                  'No description';
-              return Tooltip(
-                message: description,
-                child: Chip(
-                  avatar: Icon(
-                    _getToolIcon(toolName),
-                    size: 16,
-                  ),
-                  label: Text(toolName),
-                  onDeleted: null,
-                ),
-              );
-            }).toList(),
-          ),
-        const SizedBox(height: 16),
-        const Divider(),
-        const SizedBox(height: 16),
-
-        // Execution Status Section
-        Row(
-          children: [
-            Text(
-              'Execution Status',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const Spacer(),
-            if (isExecuting)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Running',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              )
-            else
-              Text(
-                executionSteps.isEmpty ? 'Idle' : 'Complete',
-                style: TextStyle(
-                  color: executionSteps.isEmpty ? Colors.grey : Colors.green,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Execution Steps
-        if (executionSteps.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              'No execution history yet',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          )
-        else
-          ...executionSteps.map((step) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _getStepColor(step.status),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _getStepBorderColor(step.status),
-                    width: 1,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _getStepIcon(step.status),
-                          size: 16,
-                          color: _getStepIconColor(step.status),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            step.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          step.status.toString().split('.').last.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: _getStepIconColor(step.status),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (step.details != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        step.details!,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(fontStyle: FontStyle.italic),
-                      ),
-                    ],
-                    if (step.result != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Result: ${step.result}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        const SizedBox(height: 12),
-        if (executionSteps.isNotEmpty)
-          ElevatedButton.icon(
-            onPressed: () {
-              ref
-                  .read(agentExecutionUIProvider.notifier)
-                  .clearExecutionHistory();
-            },
-            icon: const Icon(Icons.clear),
-            label: const Text('Clear History'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade100,
-              foregroundColor: Colors.red.shade900,
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// Build agent memory tab
-  Widget _buildAgentMemoryTab(WidgetRef ref) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.memory_outlined, size: 48, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Agent Memory'),
-          Text(
-            'View and manage agent memories',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build command chip
-  Widget _buildCommandChip(String command) {
-    return ActionChip(
-      avatar: const Icon(Icons.code, size: 16),
-      label: Text(command),
-      onPressed: () {
-        // Insert command into input field
-        // This will be implemented when we integrate with the chat input
-      },
-    );
-  }
-
-  /// Show agent creation dialog
-  void _showAgentCreationDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create Agent'),
-        content: const Text('Agent creation dialog will be implemented here.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-  }
+  // Removed unused agent panel helpers to reduce clutter and avoid lints
 
   /// Format model ID to display name
   String _formatModelName(String modelId) {
@@ -1104,13 +923,26 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                                 // Close the sheet using its own context
                                 Navigator.pop(context);
 
-                                // The chat provider handles model selection internally
+                                // Save model selection to both SharedPreferences AND ModelSelectionService
                                 try {
-                                  // Save the last selected model in preferences
+                                  print(
+                                      'DEBUG: Selecting model: $model for provider: $providerId');
+
+                                  // Save to SharedPreferences (for immediate UI updates)
                                   final prefs =
                                       ref.read(sharedPreferencesProvider);
                                   await prefs.setString(
                                       'last_selected_model', model);
+                                  print(
+                                      'DEBUG: Saved to SharedPreferences: last_selected_model=$model');
+
+                                  // Save to ModelSelectionService (for persistence across sessions)
+                                  final modelService =
+                                      ModelSelectionService.instance;
+                                  await modelService.setActiveModel(
+                                      providerId, model);
+                                  print(
+                                      'DEBUG: Saved to ModelSelectionService: $providerId -> $model');
 
                                   setState(() {
                                     _currentModelId = model;
@@ -1125,6 +957,7 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
                                     );
                                   }
                                 } catch (e) {
+                                  print('DEBUG: Error selecting model: $e');
                                   if (mounted) {
                                     ScaffoldMessenger.of(parentContext)
                                         .showSnackBar(
@@ -1153,77 +986,5 @@ class _EnhancedAIChatPageState extends ConsumerState<EnhancedAIChatPage> {
     );
   }
 
-  /// Get icon for tool based on its name
-  IconData _getToolIcon(String toolName) {
-    switch (toolName.toLowerCase()) {
-      case 'ui_validation':
-        return Icons.widgets;
-      case 'sensor_access':
-        return Icons.sensors;
-      case 'file_operations':
-        return Icons.folder;
-      case 'app_navigation':
-        return Icons.map;
-      case 'location_access':
-        return Icons.location_on;
-      default:
-        return Icons.extension;
-    }
-  }
-
-  /// Get background color for execution step
-  Color _getStepColor(StepExecutionStatus status) {
-    switch (status) {
-      case StepExecutionStatus.pending:
-        return Colors.grey.shade100;
-      case StepExecutionStatus.running:
-        return Colors.orange.shade50;
-      case StepExecutionStatus.completed:
-        return Colors.green.shade50;
-      case StepExecutionStatus.failed:
-        return Colors.red.shade50;
-    }
-  }
-
-  /// Get border color for execution step
-  Color _getStepBorderColor(StepExecutionStatus status) {
-    switch (status) {
-      case StepExecutionStatus.pending:
-        return Colors.grey.shade300;
-      case StepExecutionStatus.running:
-        return Colors.orange.shade300;
-      case StepExecutionStatus.completed:
-        return Colors.green.shade300;
-      case StepExecutionStatus.failed:
-        return Colors.red.shade300;
-    }
-  }
-
-  /// Get icon for execution step status
-  IconData _getStepIcon(StepExecutionStatus status) {
-    switch (status) {
-      case StepExecutionStatus.pending:
-        return Icons.schedule;
-      case StepExecutionStatus.running:
-        return Icons.hourglass_bottom;
-      case StepExecutionStatus.completed:
-        return Icons.check_circle;
-      case StepExecutionStatus.failed:
-        return Icons.error;
-    }
-  }
-
-  /// Get icon color for execution step
-  Color _getStepIconColor(StepExecutionStatus status) {
-    switch (status) {
-      case StepExecutionStatus.pending:
-        return Colors.grey;
-      case StepExecutionStatus.running:
-        return Colors.orange;
-      case StepExecutionStatus.completed:
-        return Colors.green;
-      case StepExecutionStatus.failed:
-        return Colors.red;
-    }
-  }
+  // Removed unused step/tool helper methods (execution panel deprecated).
 }
