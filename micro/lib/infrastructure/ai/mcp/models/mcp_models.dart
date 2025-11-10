@@ -86,6 +86,10 @@ class MCPServerConfig {
       enabled: enabled ?? this.enabled,
     );
   }
+
+  // Convenience getters for compatibility
+  List<String>? get arguments => args;
+  Map<String, String>? get environment => env;
 }
 
 /// MCP Server Connection State

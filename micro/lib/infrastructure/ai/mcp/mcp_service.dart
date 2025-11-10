@@ -67,6 +67,20 @@ class MCPService {
     return _serverConfigs.values.toList();
   }
 
+  /// Get all server IDs
+  List<String> getAllServerIds() {
+    return _serverConfigs.keys.toList();
+  }
+
+  /// Get tools for a specific server
+  Future<List<MCPTool>> getServerTools(String serverId) async {
+    final state = _serverStates[serverId];
+    if (state == null) {
+      return [];
+    }
+    return state.availableTools;
+  }
+
   /// Get all server states
   List<MCPServerState> getServerStates() {
     return _serverStates.values.toList();

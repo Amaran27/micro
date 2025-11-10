@@ -11,29 +11,15 @@ micro.ChatMessage convertLangchainChatMessage(
     messageType = MessageType.user;
     // Extract text from ChatMessageContent
     final contentObj = langchainMessage.content;
-    if (contentObj is langchain_core.ChatMessageContentText) {
-      content = contentObj.text;
-    } else {
-      // Try to extract text from the content object
-      try {
-        content = contentObj.toString();
-        // If it's JSON-like, try to extract the text field
-        if (content.contains('"text":')) {
-          final textMatch = RegExp(r'"text":\s*"([^"]*)"').firstMatch(content);
-          if (textMatch != null) {
-            content = textMatch.group(1) ?? content;
-          }
-        }
-      } catch (e) {
-        content = 'Unable to extract message content';
-      }
-    }
+    content = _extractTextContent(contentObj);
   } else if (langchainMessage is langchain_core.AIChatMessage) {
     messageType = MessageType.assistant;
-    content = langchainMessage.content;
+    final contentObj = langchainMessage.content;
+    content = _extractTextContent(contentObj);
   } else if (langchainMessage is langchain_core.SystemChatMessage) {
     messageType = MessageType.system;
-    content = langchainMessage.content;
+    final contentObj = langchainMessage.content;
+    content = _extractTextContent(contentObj);
   } else {
     content = langchainMessage.toString(); // Fallback for unknown types
   }
@@ -44,4 +30,40 @@ micro.ChatMessage convertLangchainChatMessage(
     type: messageType,
     content: content,
   );
+}
+
+/// Extract text content from ChatMessageContent
+String _extractTextContent(dynamic contentObj) {
+  if (contentObj is String) {
+    return contentObj;
+  } else if (contentObj is langchain_core.ChatMessageContentText) {
+    return contentObj.text;
+  } else if (contentObj is langchain_core.ChatMessageContent) {
+    // Try to extract text from the ChatMessageContent
+    try {
+      final parts = contentObj.parts;
+      if (parts.isNotEmpty && parts.first is langchain_core.ChatMessageContentText) {
+        return (parts.first as langchain_core.ChatMessageContentText).text;
+      } else {
+        return contentObj.toString();
+      }
+    } catch (e) {
+      return contentObj.toString();
+    }
+  } else {
+    // Try to extract text from the content object
+    try {
+      final str = contentObj.toString();
+      // If it's JSON-like, try to extract the text field
+      if (str.contains('"text":')) {
+        final textMatch = RegExp(r'"text":\s*"([^"]*)"').firstMatch(str);
+        if (textMatch != null) {
+          return textMatch.group(1) ?? str;
+        }
+      }
+      return str;
+    } catch (e) {
+      return 'Unable to extract message content';
+    }
+  }
 }
