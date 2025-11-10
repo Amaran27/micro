@@ -4,17 +4,17 @@ import 'secure_api_storage.dart';
 import 'model_selection_service.dart';
 import 'interfaces/provider_adapter.dart';
 import 'interfaces/provider_config.dart';
-import 'adapters/chat_openai_adapter.dart';
-import 'adapters/chat_google_adapter.dart';
-import 'adapters/zhipuai_adapter.dart';
-import 'adapters/chat_mistral_adapter.dart';
+import 'simple_ai_service.dart';
+import 'adapters/simple_provider_adapter.dart';
 import 'provider_storage_service.dart' as new_store;
 import 'provider_config_model.dart' as model_cfg;
 
 /// Configuration for AI providers in the autonomous agent system
+/// Refactored to use SimpleAIService instead of individual adapters
 class AIProviderConfig {
   final AppLogger _logger = AppLogger();
   late final ModelSelectionService _modelSelectionService;
+  final SimpleAIService _aiService = SimpleAIService();
 
   // Provider configurations
   final Map<String, dynamic> _providerConfigs = {};
@@ -197,50 +197,40 @@ class AIProviderConfig {
 
     _logger.info('Using model: $model for provider: $canonicalId');
 
-    switch (canonicalId) {
-      case 'openai':
-        final adapter = ChatOpenAIAdapter();
-        final openaiConfig = OpenAIConfig(
-          model: model,
-          apiKey: apiKey,
-        );
-        await adapter.initialize(openaiConfig);
-        _activeProviders[canonicalId] = adapter;
-        return adapter;
+    try {
+      // Create adapter using SimpleAIService
+      final adapter = SimpleProviderAdapter(_aiService, canonicalId, model);
+      
+      // Initialize based on provider type
+      ProviderConfig providerConfig;
+      
+      switch (canonicalId) {
+        case 'openai':
+          providerConfig = OpenAIConfig(model: model, apiKey: apiKey);
+          break;
 
-      case 'google':
-        final adapter = ChatGoogleAdapter();
-        final googleConfig = GoogleConfig(
-          model: model,
-          apiKey: apiKey,
-        );
-        await adapter.initialize(googleConfig);
-        _activeProviders[canonicalId] = adapter;
-        return adapter;
+        case 'google':
+          providerConfig = GoogleConfig(model: model, apiKey: apiKey);
+          break;
 
-      case 'claude':
-      case 'anthropic': // Support both names
-        // For now, we don't have an AnthropicAdapter implemented
-        // TODO: Implement AnthropicAdapter similar to other providers
-        _logger.warning(
-            'Anthropic provider not yet implemented with adapter pattern');
-        return null;
+        case 'zhipu-ai':
+        case 'zhipuai':
+        case 'z_ai':
+          providerConfig = ZhipuAIConfig(model: model, apiKey: apiKey);
+          break;
 
-      case 'zhipu-ai':
-      case 'zhipuai':
-      case 'z_ai': // Support all aliases
-        final adapter = ZhipuAIAdapter();
-        final zhipuConfig = ZhipuAIConfig(
-          model: model,
-          apiKey: apiKey,
-        );
-        await adapter.initialize(zhipuConfig);
-        _activeProviders['zhipu-ai'] = adapter;
-        return adapter;
-
-      // For now, we'll return null for unsupported providers
-      default:
-        return null;
+        default:
+          _logger.warning('Unsupported provider: $canonicalId');
+          return null;
+      }
+      
+      await adapter.initialize(providerConfig);
+      _activeProviders[canonicalId] = adapter;
+      return adapter;
+      
+    } catch (e) {
+      _logger.error('Failed to initialize $canonicalId provider', error: e);
+      return null;
     }
   }
 

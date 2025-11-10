@@ -15,7 +15,19 @@ import 'package:micro/infrastructure/ai/model_selection_service.dart';
 import 'package:micro/core/utils/logger.dart';
 import 'package:micro/domain/models/chat/chat_message.dart' as micro;
 
+
+import 'package:micro/infrastructure/ai/mcp/mcp_service.dart';
+import 'package:micro/infrastructure/ai/mcp/models/mcp_models.dart';
+import 'package:micro/infrastructure/ai/agent/agent_service.dart';
+import 'package:micro/infrastructure/ai/agent/agent_types.dart' as agent_types;
 import 'dart:convert';
+
+/// Routing decision returned by LLM classification for swarm usage.
+class SwarmRouteDecision {
+  final bool useSwarm;
+  final int? maxSpecialists;
+  const SwarmRouteDecision({required this.useSwarm, this.maxSpecialists});
+}
 
 class ChatState {
   final List<micro.ChatMessage> messages;
@@ -68,10 +80,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Map<String, DateTime> _adapterCacheTime = {};     // "providerId:modelId" -> timestamp
   static const Duration _adapterCacheExpiry = Duration(minutes: 5);
   
+  MCPService? _mcpService;
+  AgentService? _agentService;
   String? _pendingTypingId;
 
   ChatNotifier(this._aiProviderConfig, this._ref) : super(ChatState()) {
     _initializeAIProvider();
+    _initializeAgentServices();
   }
 
   Future<void> _initializeAIProvider() async {
@@ -79,6 +94,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (!_aiProviderConfig.isInitialized) {
       await _aiProviderConfig.initialize();
     }
+  }
+
+  void _initializeAgentServices() {
+    // Initialize MCP and Agent services
+    _mcpService = MCPService();
+    _agentService = AgentService(mcpService: _mcpService!);
   }
 
   /// True reactive provider+model caching using AIProviderConfig
@@ -243,6 +264,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     try {
+      // SWARM MODE: Use swarm intelligence for complex tasks
+      if (swarmMode && _agentService != null) {
+        await _executeSwarmMode(text);
+        _logLatency(startTime, mode: 'swarm');
+        return;
+      }
+
+      // AGENT MODE: Use autonomous agent with MCP tools
+      if (agentMode && _agentService != null) {
+        await _executeAgentMode(text);
+        _logLatency(startTime, mode: 'agent');
+        return;
+      }
+
       // NORMAL MODE: Use optimized provider adapter detection
       final adapter = await _getOptimizedAdapter();
 
@@ -363,12 +398,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(messages: []);
   }
 
-  /// Simple latency logging helper
-  void _logLatency(DateTime start, {required String mode}) {
-    final elapsed = DateTime.now().difference(start);
-    print('LATENCY [$mode]: ${elapsed.inMilliseconds} ms total');
-  }
-}
+  /// Execute swarm mode with multiple specialists
+  Future<void> _executeSwarmMode(String userMessage) async {
     final swarmStartTime = DateTime.now();
     final agentStart = DateTime.now();
     String result;
