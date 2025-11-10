@@ -20,6 +20,13 @@ enum MCPConnectionStatus {
   error,
 }
 
+/// Platform support for MCP servers
+enum MCPServerPlatform {
+  desktop,
+  mobile,
+  both,
+}
+
 /// MCP Server Configuration
 @JsonSerializable()
 class MCPServerConfig {
@@ -208,4 +215,19 @@ class RecommendedMCPServer {
     required this.defaultConfig,
     this.documentationUrl,
   });
+
+  // Convenience getters for compatibility
+  MCPServerPlatform get platform {
+    if (supportedPlatforms.contains('desktop') && supportedPlatforms.contains('mobile')) {
+      return MCPServerPlatform.both;
+    } else if (supportedPlatforms.contains('desktop')) {
+      return MCPServerPlatform.desktop;
+    } else if (supportedPlatforms.contains('mobile')) {
+      return MCPServerPlatform.mobile;
+    } else {
+      return MCPServerPlatform.desktop; // default
+    }
+  }
+
+  String? get docUrl => documentationUrl;
 }

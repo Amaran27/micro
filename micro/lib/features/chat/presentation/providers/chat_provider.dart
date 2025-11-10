@@ -531,8 +531,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final fullResponse = result.result + stepsText.toString();
     
     // Convert to chat message format
-    final langchainAssistantMessage =
-        ChatMessage.ai(ChatMessageContent.text(fullResponse));
+    final langchainAssistantMessage = ChatMessage.ai(fullResponse);
     final assistantMessage = convertLangchainChatMessage(langchainAssistantMessage);
     
     state = state.copyWith(

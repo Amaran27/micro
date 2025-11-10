@@ -39,17 +39,8 @@ String _extractTextContent(dynamic contentObj) {
   } else if (contentObj is langchain_core.ChatMessageContentText) {
     return contentObj.text;
   } else if (contentObj is langchain_core.ChatMessageContent) {
-    // Try to extract text from the ChatMessageContent
-    try {
-      final parts = contentObj.parts;
-      if (parts.isNotEmpty && parts.first is langchain_core.ChatMessageContentText) {
-        return (parts.first as langchain_core.ChatMessageContentText).text;
-      } else {
-        return contentObj.toString();
-      }
-    } catch (e) {
-      return contentObj.toString();
-    }
+    // ChatMessageContent doesn't expose parts directly, convert to string
+    return contentObj.toString();
   } else {
     // Try to extract text from the content object
     try {
