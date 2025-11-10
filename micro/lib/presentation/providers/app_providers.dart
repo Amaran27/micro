@@ -6,6 +6,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
 import '../../infrastructure/permissions/services/store_compliant_permissions_manager.dart';
 import '../../infrastructure/ai/ai_provider_config.dart';
+import '../../infrastructure/ai/model_selection_service.dart';
+
+/// Provider for ModelSelectionService
+final modelSelectionServiceProvider = Provider<ModelSelectionService>((ref) {
+  throw UnimplementedError('ModelSelectionService must be overridden in main.dart');
+});
+
+/// Provider for initialized ModelSelectionService (async initialization)
+final initializedModelSelectionServiceProvider = FutureProvider<ModelSelectionService>((ref) async {
+  final service = ref.watch(modelSelectionServiceProvider);
+  // The service should be initialized in main.dart
+  return service;
+});
 
 /// Provider for permissions manager
 final permissionsManagerProvider =

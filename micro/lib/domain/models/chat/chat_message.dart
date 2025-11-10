@@ -282,6 +282,12 @@ class ChatMessage {
   /// Check if message failed to send
   bool get hasFailed => status == MessageStatus.failed;
 
+  /// Check if message is a tool execution
+  bool get isToolExecution => metadata['isToolExecution'] == true;
+
+  /// Check if message is an autonomous action
+  bool get isAutonomousAction => metadata['isAutonomousAction'] == true;
+
   /// Convert to JSON for storage
   Map<String, dynamic> toJson() {
     return {

@@ -388,27 +388,35 @@ class AgentService {
     if (model.contains('gpt')) {
       return ChatOpenAI(
         apiKey: '', // Will be set from provider config
-        model: model,
-        temperature: temperature,
+        defaultOptions: ChatOpenAIOptions(
+          model: model,
+          temperature: temperature,
+        ),
       );
     } else if (model.contains('gemini')) {
       return ChatGoogleGenerativeAI(
         apiKey: '', // Will be set from provider config
-        model: model,
-        temperature: temperature,
+        defaultOptions: ChatGoogleGenerativeAIOptions(
+          model: model,
+          temperature: temperature,
+        ),
       );
     } else if (model.contains('claude')) {
       return ChatAnthropic(
         apiKey: '', // Will be set from provider config  
-        model: model,
-        temperature: temperature,
+        defaultOptions: ChatAnthropicOptions(
+          model: model,
+          temperature: temperature,
+        ),
       );
     } else {
       // Default to OpenAI compatible
       return ChatOpenAI(
         apiKey: '',
-        model: model,
-        temperature: temperature,
+        defaultOptions: ChatOpenAIOptions(
+          model: model,
+          temperature: temperature,
+        ),
       );
     }
   }

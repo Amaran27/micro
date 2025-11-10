@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../infrastructure/ai/ai_provider_config.dart';
 import '../../infrastructure/ai/provider_registry.dart';
 import '../../core/utils/logger.dart';
+import '../../domain/models/autonomous/context_analysis.dart';
 import 'app_providers.dart';
 
 /// Provider for logger
